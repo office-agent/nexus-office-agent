@@ -1,0 +1,11 @@
+.next
+.project-to-act
+.env*
+!.env.example
+node_modules
+*.log
+.codex-*
+docs
+tests
+.git
+tsconfig.tsbuildinfo

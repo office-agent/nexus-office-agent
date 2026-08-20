@@ -1,0 +1,23 @@
+/.env.local
+.env*
+!.env.example
+!.env.wecom.example
+!.env.lan.example
+node_modules/
+.next/
+.pi-runtime/
+.next-build*/
+.runner-build/
+.tmp/
+artifacts/
+tsconfig.tsbuildinfo
+.codex-*
+out/
+*.log
+.DS_Store
+
+# Internal project ledger and environment-specific deployment evidence.
+.project-to-act/
+docs/19-vastmind-wecom-rollout.md
+deploy/single-host/vastmind-office.nginx
+public/brand/vastmind-wecom-icon*.png
