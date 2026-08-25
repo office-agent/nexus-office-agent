@@ -13,7 +13,7 @@ import { InMemoryManagementLoopRepository } from "@/src/modules/management-loop/
 import { createDevelopmentRequestContext, DEMO_MANAGER_ID, DEMO_PROJECT_ID } from "@/src/platform/context/development-context";
 
 function evaluator(model: ModelGateway = new FakeModelGateway("受控回答")) {
-  const management = new ManagementLoopService(new InMemoryManagementLoopRepository(), new InMemoryEventStore());
+  const management = new ManagementLoopService(new InMemoryManagementLoopRepository(new InMemoryEventStore()));
   const store = new InMemoryAgentStore();
   const tools = new ToolRegistry();
   registerManagementTools(tools, management);

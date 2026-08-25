@@ -11,6 +11,28 @@ import { transitionTask } from "@/src/modules/delivery/domain/task";
 import { transitionIssue } from "@/src/modules/governance/domain/issue";
 import { createDevelopmentRequestContext, DEMO_MANAGER_ID, DEMO_PROJECT_ID } from "@/src/platform/context/development-context";
 
+class FailingOutbox extends InMemoryEventStore {
+  override async appendOutbox(): Promise<void> {
+    throw new Error("OUTBOX_UNAVAILABLE");
+  }
+}
+
+class ConcurrentActionReadRepository extends InMemoryManagementLoopRepository {
+  barrierEnabled = false;
+  private readers = 0;
+  private release!: () => void;
+  private readonly barrier = new Promise<void>((resolve) => { this.release = resolve; });
+
+  override async getActionItem(tenantId: string, id: string) {
+    const item = await super.getActionItem(tenantId, id);
+    if (!this.barrierEnabled) return item;
+    this.readers += 1;
+    if (this.readers === 2) this.release();
+    await this.barrier;
+    return item;
+  }
+}
+
 describe("management loop domain", () => {
   it("enforces decision review before deciding", () => {
     const draft = {
@@ -79,9 +101,9 @@ describe("management loop domain", () => {
 
 describe("management loop application service", () => {
   it("closes risk-to-decision-to-action with outbox evidence", async () => {
-    const repository = new InMemoryManagementLoopRepository();
     const events = new InMemoryEventStore();
-    const service = new ManagementLoopService(repository, events);
+    const repository = new InMemoryManagementLoopRepository(events);
+    const service = new ManagementLoopService(repository);
     const context = createDevelopmentRequestContext("trace-management-loop");
 
     const risk = await service.identifyRisk(context, {
@@ -110,8 +132,8 @@ describe("management loop application service", () => {
         },
       ],
     });
-    const completed = await service.completeAction(context, result.actionItems[0].id, "排班单 OPS-2026-081 已确认");
-    const movedTask = await service.transitionTask(context, "70000000-0000-4000-8000-000000000002", "completed");
+    const completed = await service.completeAction(context, result.actionItems[0].id, "排班单 OPS-2026-081 已确认", 1);
+    const movedTask = await service.transitionTask(context, "70000000-0000-4000-8000-000000000002", "completed", 3);
     const issue = await service.reportIssue(context, {
       projectId: DEMO_PROJECT_ID,
       riskId: risk.id,
@@ -140,7 +162,7 @@ describe("management loop application service", () => {
   });
 
   it("denies write access without the matching permission", async () => {
-    const service = new ManagementLoopService(new InMemoryManagementLoopRepository(), new InMemoryEventStore());
+    const service = new ManagementLoopService(new InMemoryManagementLoopRepository(new InMemoryEventStore()));
     const context = createDevelopmentRequestContext();
     context.permissions = ["project:read"];
     await expect(
@@ -157,9 +179,9 @@ describe("management loop application service", () => {
   });
 
   it("retains a superseded decision and links the independently versioned replacement", async () => {
-    const repository = new InMemoryManagementLoopRepository();
     const events = new InMemoryEventStore();
-    const service = new ManagementLoopService(repository, events);
+    const repository = new InMemoryManagementLoopRepository(events);
+    const service = new ManagementLoopService(repository);
     const context = createDevelopmentRequestContext("trace-decision-supersession");
     const created = await service.recordDecision(context, {
       projectId: DEMO_PROJECT_ID, title: "原发布策略", decisionContext: "客户窗口有限",
@@ -176,5 +198,74 @@ describe("management loop application service", () => {
       expect.objectContaining({ id: created.decision.id, status: "superseded" }),
       expect.objectContaining({ id: result.replacement.id, supersedesId: created.decision.id }),
     ]));
+  });
+
+  it("rejects a decision whose risk is absent from the same project", async () => {
+    const repository = new InMemoryManagementLoopRepository(new InMemoryEventStore());
+    const service = new ManagementLoopService(repository);
+    const context = createDevelopmentRequestContext("trace-risk-decision-relation");
+
+    await expect(service.recordDecision(context, {
+      projectId: DEMO_PROJECT_ID,
+      riskId: crypto.randomUUID(),
+      title: "不存在风险的决策",
+      decisionContext: "不得仅凭客户端风险 ID 建立闭环。",
+      options: ["继续", "停止"],
+      selectedOption: "停止",
+      rationale: "风险关系必须由服务端确认。",
+      actionItems: [{
+        title: "核验风险关系",
+        ownerId: DEMO_MANAGER_ID,
+        dueAt: "2026-08-27T00:00:00.000Z",
+        acceptanceCriteria: "风险属于当前项目",
+      }],
+    })).rejects.toThrow("RISK_NOT_FOUND");
+  });
+
+  it("rolls back a risk when its outbox append fails", async () => {
+    const repository = new InMemoryManagementLoopRepository(new FailingOutbox());
+    const service = new ManagementLoopService(repository);
+    const context = createDevelopmentRequestContext("trace-management-atomicity");
+
+    await expect(service.identifyRisk(context, {
+      projectId: DEMO_PROJECT_ID,
+      title: "事务失败探针",
+      description: "风险事实与领域事件必须同时提交。",
+      ownerId: DEMO_MANAGER_ID,
+      probability: 2,
+      impact: 3,
+      sourceType: "human",
+    })).rejects.toThrow("OUTBOX_UNAVAILABLE");
+
+    expect((await repository.getSnapshot(context.tenantId, DEMO_PROJECT_ID))?.risks).toHaveLength(1);
+  });
+
+  it("allows only one concurrent completion for an action version", async () => {
+    const events = new InMemoryEventStore();
+    const repository = new ConcurrentActionReadRepository(events);
+    const service = new ManagementLoopService(repository);
+    const context = createDevelopmentRequestContext("trace-action-cas");
+    const created = await service.recordDecision(context, {
+      projectId: DEMO_PROJECT_ID,
+      title: "行动并发测试决策",
+      decisionContext: "两个客户端可能同时提交完成证据。",
+      options: ["执行", "取消"],
+      selectedOption: "执行",
+      rationale: "验证同一版本只能完成一次。",
+      actionItems: [{
+        title: "提交唯一完成证据",
+        ownerId: DEMO_MANAGER_ID,
+        dueAt: "2026-08-27T00:00:00.000Z",
+        acceptanceCriteria: "仅一个并发请求成功",
+      }],
+    });
+    repository.barrierEnabled = true;
+
+    const results = await Promise.allSettled([
+      service.completeAction(context, created.actionItems[0].id, "证据 A", created.actionItems[0].version),
+      service.completeAction(context, created.actionItems[0].id, "证据 B", created.actionItems[0].version),
+    ]);
+    expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+    expect(events.outbox.filter(({ type }) => type === "action_item.completed")).toHaveLength(1);
   });
 });

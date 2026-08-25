@@ -48,12 +48,14 @@ export const recordDecisionSchema = z
   });
 
 export const completeActionSchema = z.object({
+  version: z.number().int().positive(),
   evidence: nonBlank(3, 2000),
-});
+}).strict();
 
 export const transitionTaskSchema = z.object({
+  version: z.number().int().positive(),
   status: z.enum(["todo", "in_progress", "blocked", "in_review", "completed", "cancelled"]),
-});
+}).strict();
 
 export const reportIssueSchema = z.object({
   projectId: uuid,

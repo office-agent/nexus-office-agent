@@ -42,6 +42,7 @@ type Decision = {
 
 type ActionItem = {
   id: string;
+  version: number;
   decisionId?: string;
   title: string;
   dueAt: string;
@@ -81,6 +82,7 @@ type Snapshot = {
   }>;
   tasks: Array<{
     id: string;
+    version: number;
     milestoneId?: string;
     title: string;
     description: string;
@@ -285,7 +287,7 @@ export function ManagementLoopView({ projectId, actorId, onNotice }: { projectId
     }
   }
 
-  async function completeAction(id: string) {
+  async function completeAction(id: string, version: number) {
     const completionEvidence = evidence[id]?.trim();
     if (!completionEvidence) {
       setError("完成行动项前必须填写可核验的结果证据。");
@@ -297,7 +299,7 @@ export function ManagementLoopView({ projectId, actorId, onNotice }: { projectId
       await apiRequest(`/api/v1/management/action-items/${id}/complete`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ evidence: completionEvidence }),
+        body: JSON.stringify({ version, evidence: completionEvidence }),
       });
       await loadSnapshot();
       onNotice("行动项已完成，证据已进入闭环记录");
@@ -317,7 +319,7 @@ export function ManagementLoopView({ projectId, actorId, onNotice }: { projectId
       await apiRequest(`/api/v1/management/tasks/${task.id}/transition`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status: nextStatus }),
+        body: JSON.stringify({ version: task.version, status: nextStatus }),
       });
       await loadSnapshot();
       onNotice(nextStatus === "completed" ? "任务已完成并写入领域事件" : "任务状态已推进");
@@ -442,7 +444,7 @@ export function ManagementLoopView({ projectId, actorId, onNotice }: { projectId
               <article className={`mgmt-thread-node mgmt-node-action-item ${item.status === "completed" ? "is-complete" : ""}`} key={item.id}>
                 <div className="mgmt-node-rail"><span>{item.status === "completed" ? <Check size={15} /> : <ClipboardCheck size={15} />}</span>{index < snapshot.actionItems.length - 1 ? <i /> : null}</div>
                 <div className="mgmt-node-body"><div className="mgmt-node-meta"><span>{String(openRisks.length + snapshot.decisions.length + index + 2).padStart(2, "0")} · 行动验证</span><b>{item.status === "completed" ? "有证据" : `截止 ${new Date(item.dueAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}`}</b></div><h3>{item.title}</h3><p>验收标准：{item.acceptanceCriteria}</p>
-                  {item.status === "completed" ? <div className="mgmt-evidence"><CheckCircle2 size={13} /><span>{item.completionEvidence}</span></div> : <div className="mgmt-evidence-entry"><input value={evidence[item.id] || ""} onChange={(event) => setEvidence({ ...evidence, [item.id]: event.target.value })} placeholder="填写文档编号、会议结论或可核验结果" /><button disabled={busy === item.id} onClick={() => void completeAction(item.id)}>{busy === item.id ? <LoaderCircle className="mgmt-spin" size={13} /> : <Check size={13} />}提交证据</button></div>}
+                  {item.status === "completed" ? <div className="mgmt-evidence"><CheckCircle2 size={13} /><span>{item.completionEvidence}</span></div> : <div className="mgmt-evidence-entry"><input value={evidence[item.id] || ""} onChange={(event) => setEvidence({ ...evidence, [item.id]: event.target.value })} placeholder="填写文档编号、会议结论或可核验结果" /><button disabled={busy === item.id} onClick={() => void completeAction(item.id, item.version)}>{busy === item.id ? <LoaderCircle className="mgmt-spin" size={13} /> : <Check size={13} />}提交证据</button></div>}
                 </div>
               </article>
             ))}

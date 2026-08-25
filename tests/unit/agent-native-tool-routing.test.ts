@@ -29,7 +29,7 @@ class ScriptedModel implements ModelGateway {
 describe("LLM-native Skill and Tool routing", () => {
   it("turns an LLM-selected formal task dispatch into a confirmation gate before any task exists", async () => {
     const context = createDevelopmentRequestContext("native-task-route");
-    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(), new InMemoryEventStore());
+    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(new InMemoryEventStore()));
     const tasks = new TaskCommandService(new InMemoryTaskCommandRepository());
     const conversation = (await tasks.workspace(context)).conversation;
     const tools = new ToolRegistry();
@@ -89,7 +89,7 @@ describe("LLM-native Skill and Tool routing", () => {
 
   it("lets the model place a non-task communication into a visible message pool without a confirmation proposal", async () => {
     const context = createDevelopmentRequestContext("native-message-route");
-    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(), new InMemoryEventStore());
+    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(new InMemoryEventStore()));
     const tasks = new TaskCommandService(new InMemoryTaskCommandRepository());
     const conversation = (await tasks.workspace(context)).conversation;
     const tools = new ToolRegistry();
@@ -110,7 +110,7 @@ describe("LLM-native Skill and Tool routing", () => {
 
   it("turns an LLM-selected task handoff into a confirmation proposal while exposing a separate read-only chain tool", async () => {
     const context = createDevelopmentRequestContext("native-handoff-route");
-    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(), new InMemoryEventStore());
+    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(new InMemoryEventStore()));
     const tasks = new TaskCommandService(new InMemoryTaskCommandRepository());
     const conversation = (await tasks.workspace(context)).conversation;
     const assigned = (await tasks.publishMission(context, {
@@ -133,7 +133,7 @@ describe("LLM-native Skill and Tool routing", () => {
   it("does not expose a tool when the actor lacks its permission", async () => {
     const context = createDevelopmentRequestContext("native-permission-filter");
     context.permissions = ["project:read"];
-    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(), new InMemoryEventStore());
+    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(new InMemoryEventStore()));
     const tools = new ToolRegistry();
     registerManagementTools(tools, management);
     const model = new ScriptedModel([{ content: JSON.stringify({ answer: "当前只能提供分析，不能登记风险。", skillsUsed: ["management-risk"] }) }]);

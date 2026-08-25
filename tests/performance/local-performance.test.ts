@@ -8,7 +8,7 @@ import { benchmarkOperation } from "@/src/platform/operations/performance";
 
 describe("local performance acceptance", () => {
   it("keeps core in-process reads and writes inside architecture ceilings", async () => {
-    const service = new ManagementLoopService(new InMemoryManagementLoopRepository(), new InMemoryEventStore());
+    const service = new ManagementLoopService(new InMemoryManagementLoopRepository(new InMemoryEventStore()));
     const context = createDevelopmentRequestContext("performance-trace");
     const reads = await benchmarkOperation(300, () => service.getSnapshot(context, DEMO_PROJECT_ID));
     let writeIndex = 0;

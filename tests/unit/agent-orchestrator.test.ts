@@ -14,8 +14,8 @@ import { InMemoryManagementLoopRepository } from "@/src/modules/management-loop/
 import { createDevelopmentRequestContext, DEMO_PROJECT_ID } from "@/src/platform/context/development-context";
 
 function fixture(model: ModelGateway = new FakeModelGateway("接口延迟正在压缩灰度验证窗口，建议先缩小灰度范围。")) {
-  const repository = new InMemoryManagementLoopRepository();
-  const management = new ManagementLoopService(repository, new InMemoryEventStore());
+  const repository = new InMemoryManagementLoopRepository(new InMemoryEventStore());
+  const management = new ManagementLoopService(repository);
   const store = new InMemoryAgentStore();
   const tools = new ToolRegistry();
   registerManagementTools(tools, management);

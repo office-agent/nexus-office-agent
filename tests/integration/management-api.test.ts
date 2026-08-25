@@ -38,7 +38,7 @@ describe("management HTTP API", () => {
   it("advances a delivery task through the HTTP state boundary", async () => {
     const taskId = "70000000-0000-4000-8000-000000000002";
     const response = await transitionTask(
-      jsonRequest(`http://localhost/api/v1/management/tasks/${taskId}/transition`, { status: "completed" }),
+      jsonRequest(`http://localhost/api/v1/management/tasks/${taskId}/transition`, { version: 3, status: "completed" }),
       { params: Promise.resolve({ id: taskId }) },
     );
     const payload = await response.json();
@@ -53,6 +53,21 @@ describe("management HTTP API", () => {
     expect(response.status).toBe(422);
     expect(payload.error.code).toBe("VALIDATION_FAILED");
     expect(JSON.stringify(payload)).not.toContain("stack");
+  });
+
+  it("rejects a decision that references an unknown risk", async () => {
+    const response = await createDecision(jsonRequest("http://localhost/api/v1/management/decisions", {
+      projectId: DEMO_PROJECT_ID,
+      riskId: crypto.randomUUID(),
+      title: "未知风险决策",
+      decisionContext: "风险关系必须来自服务端事实。",
+      options: ["继续", "停止"],
+      selectedOption: "停止",
+      rationale: "拒绝不可追踪关系。",
+      actionItems: [{ title: "核验风险", ownerId: DEMO_MANAGER_ID, dueAt: "2026-08-28T00:00:00.000Z", acceptanceCriteria: "风险存在且属于项目" }],
+    }));
+    expect(response.status).toBe(404);
+    expect((await response.json()).error.code).toBe("RISK_NOT_FOUND");
   });
 
   it("creates a risk, a decision and a verifiable action", async () => {
@@ -96,6 +111,7 @@ describe("management HTTP API", () => {
     const actionId = decisionPayload.data.actionItems[0].id;
     const completionResponse = await completeAction(
       jsonRequest(`http://localhost/api/v1/management/action-items/${actionId}/complete`, {
+        version: decisionPayload.data.actionItems[0].version,
         evidence: "授权书 AUTH-2026-102 双方已签署",
       }),
       { params: Promise.resolve({ id: actionId }) },
@@ -104,6 +120,16 @@ describe("management HTTP API", () => {
     expect(completionResponse.status).toBe(200);
     expect(completionPayload.data.status).toBe("completed");
     expect(completionPayload.data.completionEvidence).toContain("AUTH-2026-102");
+
+    const staleCompletion = await completeAction(
+      jsonRequest(`http://localhost/api/v1/management/action-items/${actionId}/complete`, {
+        version: decisionPayload.data.actionItems[0].version,
+        evidence: "重复提交的旧版本证据",
+      }),
+      { params: Promise.resolve({ id: actionId }) },
+    );
+    expect(staleCompletion.status).toBe(409);
+    expect((await staleCompletion.json()).error.code).toBe("ACTION_ITEM_VERSION_CONFLICT");
   });
 
   it("supersedes a formal decision without overwriting its history", async () => {

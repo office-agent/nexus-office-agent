@@ -4,6 +4,8 @@ import type { Decision } from "@/src/modules/governance/domain/decision";
 import type { ActionItem } from "@/src/modules/collaboration/domain/action-item";
 import type { DeliveryTask } from "@/src/modules/delivery/domain/task";
 import type { Issue } from "@/src/modules/governance/domain/issue";
+import { InMemoryEventStore, type EventStore } from "@/src/modules/events/application/event-store";
+import type { DomainEvent } from "@/src/modules/events/domain/event-envelope";
 import {
   DEMO_MANAGER_ID,
   DEMO_OBJECTIVE_ID,
@@ -126,7 +128,7 @@ function initialSnapshot(): ManagementSnapshot {
 export class InMemoryManagementLoopRepository implements ManagementLoopRepository {
   private readonly snapshots = new Map<string, ManagementSnapshot>();
 
-  constructor() {
+  constructor(private readonly events: EventStore = new InMemoryEventStore()) {
     this.snapshots.set(`${DEMO_TENANT_ID}:${DEMO_PROJECT_ID}`, initialSnapshot());
   }
 
@@ -135,19 +137,46 @@ export class InMemoryManagementLoopRepository implements ManagementLoopRepositor
     return snapshot ? structuredClone({ ...snapshot, generatedAt: new Date().toISOString() }) : null;
   }
 
-  async saveRisk(risk: Risk): Promise<void> {
+  async getRisk(tenantId: string, id: string): Promise<Risk | null> {
+    for (const snapshot of this.snapshots.values()) {
+      if (snapshot.project.tenantId !== tenantId) continue;
+      const risk = snapshot.risks.find((candidate) => candidate.id === id);
+      if (risk) return structuredClone(risk);
+    }
+    return null;
+  }
+
+  async saveRisk(risk: Risk, event: DomainEvent): Promise<void> {
     const snapshot = this.requireSnapshot(risk.tenantId, risk.projectId);
+    const before = structuredClone(snapshot.risks);
     const index = snapshot.risks.findIndex(({ id }) => id === risk.id);
     if (index >= 0) snapshot.risks[index] = structuredClone(risk);
     else snapshot.risks.push(structuredClone(risk));
+    try { await this.events.appendOutbox(event); } catch (error) { snapshot.risks = before; throw error; }
   }
 
-  async saveDecision(decision: Decision): Promise<void> {
+  async saveDecision(decision: Decision, actionItems: ActionItem[], event: DomainEvent): Promise<void> {
     if (!decision.projectId) throw new Error("DECISION_PROJECT_REQUIRED");
     const snapshot = this.requireSnapshot(decision.tenantId, decision.projectId);
+    if (decision.riskId && !snapshot.risks.some(({ id }) => id === decision.riskId)) throw new Error("RISK_NOT_FOUND");
+    if (actionItems.some((item) => item.projectId !== decision.projectId || item.decisionId !== decision.id)) {
+      throw new Error("ACTION_ITEM_DECISION_MISMATCH");
+    }
+    const beforeDecisions = structuredClone(snapshot.decisions);
+    const beforeActions = structuredClone(snapshot.actionItems);
     const index = snapshot.decisions.findIndex(({ id }) => id === decision.id);
     if (index >= 0) snapshot.decisions[index] = structuredClone(decision);
     else snapshot.decisions.push(structuredClone(decision));
+    for (const item of actionItems) {
+      const actionIndex = snapshot.actionItems.findIndex(({ id }) => id === item.id);
+      if (actionIndex >= 0) snapshot.actionItems[actionIndex] = structuredClone(item);
+      else snapshot.actionItems.push(structuredClone(item));
+    }
+    try { await this.events.appendOutbox(event); } catch (error) {
+      snapshot.decisions = beforeDecisions;
+      snapshot.actionItems = beforeActions;
+      throw error;
+    }
   }
 
   async getDecision(tenantId: string, id: string): Promise<Decision | null> {
@@ -159,18 +188,16 @@ export class InMemoryManagementLoopRepository implements ManagementLoopRepositor
     return null;
   }
 
-  async replaceDecision(original: Decision, replacement: Decision, expectedOriginalVersion: number): Promise<boolean> {
+  async replaceDecision(original: Decision, replacement: Decision, expectedOriginalVersion: number, event: DomainEvent): Promise<boolean> {
     if (!original.projectId || original.projectId !== replacement.projectId) return false;
     const snapshot = this.requireSnapshot(original.tenantId, original.projectId);
     const index = snapshot.decisions.findIndex(({ id }) => id === original.id);
     if (index < 0 || snapshot.decisions[index].version !== expectedOriginalVersion || snapshot.decisions.some(({ id }) => id === replacement.id)) return false;
+    const before = structuredClone(snapshot.decisions);
     snapshot.decisions[index] = structuredClone(original);
     snapshot.decisions.push(structuredClone(replacement));
+    try { await this.events.appendOutbox(event); } catch (error) { snapshot.decisions = before; throw error; }
     return true;
-  }
-
-  async saveActionItems(items: ActionItem[]): Promise<void> {
-    for (const item of items) await this.saveActionItem(item);
   }
 
   async getActionItem(tenantId: string, id: string): Promise<ActionItem | null> {
@@ -182,12 +209,15 @@ export class InMemoryManagementLoopRepository implements ManagementLoopRepositor
     return null;
   }
 
-  async saveActionItem(item: ActionItem): Promise<void> {
+  async saveActionItem(item: ActionItem, expectedVersion: number, event: DomainEvent): Promise<boolean> {
     if (!item.projectId) throw new Error("ACTION_ITEM_PROJECT_REQUIRED");
     const snapshot = this.requireSnapshot(item.tenantId, item.projectId);
     const index = snapshot.actionItems.findIndex(({ id }) => id === item.id);
-    if (index >= 0) snapshot.actionItems[index] = structuredClone(item);
-    else snapshot.actionItems.push(structuredClone(item));
+    if (index < 0 || snapshot.actionItems[index].version !== expectedVersion) return false;
+    const before = structuredClone(snapshot.actionItems[index]);
+    snapshot.actionItems[index] = structuredClone(item);
+    try { await this.events.appendOutbox(event); } catch (error) { snapshot.actionItems[index] = before; throw error; }
+    return true;
   }
 
   async getTask(tenantId: string, id: string): Promise<DeliveryTask | null> {
@@ -199,18 +229,23 @@ export class InMemoryManagementLoopRepository implements ManagementLoopRepositor
     return null;
   }
 
-  async saveTask(task: DeliveryTask): Promise<void> {
+  async saveTask(task: DeliveryTask, expectedVersion: number, event: DomainEvent): Promise<boolean> {
     const snapshot = this.requireSnapshot(task.tenantId, task.projectId);
     const index = snapshot.tasks.findIndex(({ id }) => id === task.id);
-    if (index >= 0) snapshot.tasks[index] = structuredClone(task);
-    else snapshot.tasks.push(structuredClone(task));
+    if (index < 0 || snapshot.tasks[index].version !== expectedVersion) return false;
+    const before = structuredClone(snapshot.tasks[index]);
+    snapshot.tasks[index] = structuredClone(task);
+    try { await this.events.appendOutbox(event); } catch (error) { snapshot.tasks[index] = before; throw error; }
+    return true;
   }
 
-  async saveIssue(issue: Issue): Promise<void> {
+  async saveIssue(issue: Issue, event: DomainEvent): Promise<void> {
     const snapshot = this.requireSnapshot(issue.tenantId, issue.projectId);
+    const before = structuredClone(snapshot.issues);
     const index = snapshot.issues.findIndex(({ id }) => id === issue.id);
     if (index >= 0) snapshot.issues[index] = structuredClone(issue);
     else snapshot.issues.push(structuredClone(issue));
+    try { await this.events.appendOutbox(event); } catch (error) { snapshot.issues = before; throw error; }
   }
 
   private requireSnapshot(tenantId: string, projectId: string): ManagementSnapshot {
@@ -225,10 +260,10 @@ const globalManagementRepository = globalThis as typeof globalThis & {
   __nexusManagementRepositoryVersion?: number;
 };
 
-export function getDevelopmentManagementRepository(): InMemoryManagementLoopRepository {
-  if (globalManagementRepository.__nexusManagementRepositoryVersion !== 2) {
-    globalManagementRepository.__nexusManagementRepository = new InMemoryManagementLoopRepository();
-    globalManagementRepository.__nexusManagementRepositoryVersion = 2;
+export function getDevelopmentManagementRepository(events?: EventStore): InMemoryManagementLoopRepository {
+  if (globalManagementRepository.__nexusManagementRepositoryVersion !== 3) {
+    globalManagementRepository.__nexusManagementRepository = new InMemoryManagementLoopRepository(events);
+    globalManagementRepository.__nexusManagementRepositoryVersion = 3;
   }
   return globalManagementRepository.__nexusManagementRepository!;
 }

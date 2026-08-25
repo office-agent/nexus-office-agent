@@ -60,6 +60,8 @@ type RequestContext = {
 /admin/policies /admin/audit /admin/models
 ```
 
+经营管理写入遵循同一闭环契约：带 `riskId` 的决定或问题必须引用当前租户、同一项目中的风险；决定、行动项与对应 Outbox 事件在同一租户事务中提交。行动完成与任务状态迁移必须提交当前 `version`，服务端使用 compare-and-set 拒绝丢失更新；行动进入 `completed` 时必须同时保存非空完成证据。版本冲突返回 `409`，不存在的关联对象返回 `404`。
+
 ## 3. Agent API
 
 ### 创建运行
@@ -161,4 +163,4 @@ M12 的完整资源 API 见 [17 管理智能中枢](./17-management-intelligence
 - `ai_governance.evaluated`
 - `management_channel_action.created` / `management_channel_action.executed`
 
-所有写 API 仍使用请求上下文推导租户和主体、以版本拒绝丢失更新，并通过 Outbox 追加业务事件。
+所有写 API 仍使用请求上下文推导租户和主体、以版本拒绝丢失更新，并通过与业务事实相同的数据库事务追加 Outbox 事件。
