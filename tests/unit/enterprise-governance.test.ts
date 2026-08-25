@@ -101,6 +101,32 @@ describe("enterprise governance", () => {
     expect((await repository.getProjectChange(requester.tenantId, change.id))?.status).toBe("compensated");
   });
 
+  it("rejects compensation at its expiry boundary without changing the project or plan", async () => {
+    const { repository, service, requester, approver } = fixture();
+    const change = await service.createProjectChange(requester, {
+      projectId: DEMO_PROJECT_ID,
+      changeType: "schedule",
+      proposedBaseline: { targetEndAt: "2026-10-15", resourcePlan: { delivery: 4, qa: 2 } },
+      reason: "客户验收窗口调整",
+      impactAssessment: "延期两周，增加一名交付与一名质量人员",
+    });
+    const approved = await service.approveProjectChange(approver, change.id, change.version);
+    expect(approved.approvedBy).toBe(APPROVER_ID);
+    const applied = await service.applyProjectChange(approver, change.id, approved.version, new Date("2026-08-06T00:00:00.000Z"));
+    const projectBeforeCompensation = await repository.getProject(requester.tenantId, DEMO_PROJECT_ID);
+    const planBeforeCompensation = await repository.getCompensationPlan(requester.tenantId, applied.compensation.id);
+
+    await expect(
+      service.executeCompensation(approver, applied.compensation.id, applied.compensation.version, new Date(applied.compensation.expiresAt)),
+    ).rejects.toThrow("COMPENSATION_EXPIRED");
+
+    const projectAfterCompensation = await repository.getProject(requester.tenantId, DEMO_PROJECT_ID);
+    const planAfterCompensation = await repository.getCompensationPlan(requester.tenantId, applied.compensation.id);
+    expect(projectAfterCompensation).toEqual(projectBeforeCompensation);
+    expect(planAfterCompensation).toEqual(planBeforeCompensation);
+    expect(planAfterCompensation).toMatchObject({ status: "ready", version: applied.compensation.version });
+  });
+
   it("requires acceptance evidence, named handoffs, closing state and a distinct approver", async () => {
     const { repository, service, requester, approver } = fixture();
     await expect(service.saveClosureReview(requester, DEMO_PROJECT_ID, {
