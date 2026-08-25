@@ -4,7 +4,6 @@ import { completeActionItem, type ActionItem } from "@/src/modules/collaboration
 import { decide, markDecisionSuperseded, submitDecision, type Decision } from "@/src/modules/governance/domain/decision";
 import { type Risk } from "@/src/modules/governance/domain/risk";
 import { createDomainEvent, type DomainEvent } from "@/src/modules/events/domain/event-envelope";
-import type { EventStore } from "@/src/modules/events/application/event-store";
 import type { RequestContext } from "@/src/platform/context/request-context";
 import type { ManagementLoopRepository, ManagementSnapshot } from "@/src/modules/management-loop/application/contracts";
 import { transitionTask as moveTask, type DeliveryTaskStatus } from "@/src/modules/delivery/domain/task";
@@ -15,10 +14,7 @@ function requireAllowed(allowed: boolean, reason: string): void {
 }
 
 export class ManagementLoopService {
-  constructor(
-    private readonly repository: ManagementLoopRepository,
-    private readonly events: EventStore,
-  ) {}
+  constructor(private readonly repository: ManagementLoopRepository) {}
 
   async getSnapshot(context: RequestContext, projectId: string): Promise<ManagementSnapshot> {
     const decision = evaluateAccess({
@@ -50,8 +46,10 @@ export class ManagementLoopService {
       status: "identified",
       version: 1,
     };
-    await this.repository.saveRisk(risk);
-    await this.events.appendOutbox(this.event(context, "risk.identified", "risk", risk.id, risk.version, { projectId: risk.projectId }, eventId));
+    await this.repository.saveRisk(
+      risk,
+      this.event(context, "risk.identified", "risk", risk.id, risk.version, { projectId: risk.projectId }, eventId),
+    );
     return risk;
   }
 
@@ -75,6 +73,11 @@ export class ManagementLoopService {
       resource: { tenantId: context.tenantId, type: "decision", id: "new", projectId: input.projectId },
     });
     requireAllowed(policy.allowed, policy.reason);
+    if (input.riskId) {
+      const risk = await this.repository.getRisk(context.tenantId, input.riskId);
+      if (!risk) throw new Error("RISK_NOT_FOUND");
+      if (risk.projectId !== input.projectId) throw new Error("RISK_PROJECT_MISMATCH");
+    }
     let decision: Decision = {
       id: input.decisionId ?? randomUUID(),
       tenantId: context.tenantId,
@@ -103,9 +106,7 @@ export class ManagementLoopService {
       status: "open" as const,
       version: 1,
     }));
-    await this.repository.saveDecision(decision);
-    await this.repository.saveActionItems(actionItems);
-    await this.events.appendOutbox(
+    await this.repository.saveDecision(decision, actionItems,
       this.event(context, "decision.decided", "decision", decision.id, decision.version, {
         projectId: input.projectId,
         actionItemIds: actionItems.map(({ id }) => id),
@@ -134,14 +135,18 @@ export class ManagementLoopService {
     replacement = decide(submitDecision(replacement), {
       selectedOption: input.selectedOption, rationale: input.rationale, decidedBy: context.actorId, reviewAt: input.reviewAt,
     });
-    if (!(await this.repository.replaceDecision(original, replacement, input.version))) throw new Error("DECISION_VERSION_CONFLICT");
-    await this.events.appendOutbox(this.event(context, "decision.superseded", "decision", original.id, original.version, {
-      projectId: original.projectId, replacementDecisionId: replacement.id,
-    }));
+    if (!(await this.repository.replaceDecision(
+      original,
+      replacement,
+      input.version,
+      this.event(context, "decision.superseded", "decision", original.id, original.version, {
+        projectId: original.projectId, replacementDecisionId: replacement.id,
+      }),
+    ))) throw new Error("DECISION_VERSION_CONFLICT");
     return { original, replacement };
   }
 
-  async completeAction(context: RequestContext, id: string, evidence: string) {
+  async completeAction(context: RequestContext, id: string, evidence: string, expectedVersion: number) {
     const current = await this.repository.getActionItem(context.tenantId, id);
     if (!current) throw new Error("ACTION_ITEM_NOT_FOUND");
     const policy = evaluateAccess({
@@ -156,18 +161,18 @@ export class ManagementLoopService {
       },
     });
     requireAllowed(policy.allowed, policy.reason);
+    if (current.version !== expectedVersion) throw new Error("ACTION_ITEM_VERSION_CONFLICT");
     const completed = completeActionItem(current, evidence);
-    await this.repository.saveActionItem(completed);
-    await this.events.appendOutbox(
+    if (!(await this.repository.saveActionItem(completed, expectedVersion,
       this.event(context, "action_item.completed", "action_item", completed.id, completed.version, {
         projectId: completed.projectId,
         decisionId: completed.decisionId,
       }),
-    );
+    ))) throw new Error("ACTION_ITEM_VERSION_CONFLICT");
     return completed;
   }
 
-  async transitionTask(context: RequestContext, id: string, next: DeliveryTaskStatus) {
+  async transitionTask(context: RequestContext, id: string, next: DeliveryTaskStatus, expectedVersion: number) {
     const current = await this.repository.getTask(context.tenantId, id);
     if (!current) throw new Error("TASK_NOT_FOUND");
     const policy = evaluateAccess({
@@ -182,15 +187,15 @@ export class ManagementLoopService {
       },
     });
     requireAllowed(policy.allowed, policy.reason);
+    if (current.version !== expectedVersion) throw new Error("TASK_VERSION_CONFLICT");
     const task = moveTask(current, next);
-    await this.repository.saveTask(task);
-    await this.events.appendOutbox(
+    if (!(await this.repository.saveTask(task, expectedVersion,
       this.event(context, "task.status_changed", "task", task.id, task.version, {
         projectId: task.projectId,
         previousStatus: current.status,
         status: task.status,
       }),
-    );
+    ))) throw new Error("TASK_VERSION_CONFLICT");
     return task;
   }
 
@@ -204,6 +209,11 @@ export class ManagementLoopService {
       resource: { tenantId: context.tenantId, type: "issue", id: "new", projectId: input.projectId },
     });
     requireAllowed(policy.allowed, policy.reason);
+    if (input.riskId) {
+      const risk = await this.repository.getRisk(context.tenantId, input.riskId);
+      if (!risk) throw new Error("RISK_NOT_FOUND");
+      if (risk.projectId !== input.projectId) throw new Error("RISK_PROJECT_MISMATCH");
+    }
     const issue: Issue = {
       ...input,
       id: randomUUID(),
@@ -211,8 +221,7 @@ export class ManagementLoopService {
       status: "open",
       version: 1,
     };
-    await this.repository.saveIssue(issue);
-    await this.events.appendOutbox(
+    await this.repository.saveIssue(issue,
       this.event(context, "issue.reported", "issue", issue.id, issue.version, {
         projectId: issue.projectId,
         riskId: issue.riskId,

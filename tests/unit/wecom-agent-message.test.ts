@@ -27,7 +27,7 @@ describe("WeCom primary Agent conversation", () => {
     const connectors = new ConnectorRegistry();
     connectors.register(connector);
 
-    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(), new InMemoryEventStore());
+    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(new InMemoryEventStore()));
     const tasks = new TaskCommandService(new InMemoryTaskCommandRepository());
     const tools = new ToolRegistry();
     registerManagementTools(tools, management);

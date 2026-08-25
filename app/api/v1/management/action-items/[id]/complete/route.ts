@@ -7,9 +7,9 @@ import { applicationErrorResponse, parseJson } from "@/src/platform/http/api-res
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const context = await resolveRequestContext(request);
-    const { evidence } = completeActionSchema.parse(await parseJson(request));
+    const { evidence, version } = completeActionSchema.parse(await parseJson(request));
     const { id } = await params;
-    const actionItem = await getManagementLoopService().completeAction(context, id, evidence);
+    const actionItem = await getManagementLoopService().completeAction(context, id, evidence, version);
     return NextResponse.json({ data: actionItem, meta: { traceId: context.traceId } });
   } catch (error) {
     return applicationErrorResponse(error);

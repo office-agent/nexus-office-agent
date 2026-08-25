@@ -109,7 +109,7 @@ describe("Postgres workflow, meeting and knowledge repositories", () => {
     const meetingRepository = new PostgresMeetingRepository(adapter);
     const managementRepository = new PostgresManagementLoopRepository(adapter);
     const knowledge = new KnowledgeService(new PostgresKnowledgeRepository(adapter));
-    const service = new MeetingService(meetingRepository, new ManagementLoopService(managementRepository, new InMemoryEventStore()), knowledge, new InMemoryEventStore());
+    const service = new MeetingService(meetingRepository, new ManagementLoopService(managementRepository), knowledge, new InMemoryEventStore());
     const meeting = {
       id: "84000000-0000-4000-8000-000000000099", tenantId, projectId, title: "发布决策会", organizerId: managerId,
       participantIds: [managerId], requiredConfirmerIds: [managerId], confirmedByIds: [], startsAt: "2026-08-05T03:00:00.000Z",

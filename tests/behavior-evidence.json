@@ -10,6 +10,12 @@
       "failureMode": "风险、决定、行动或 Outbox 证据没有形成同一条可核验管理闭环。"
     },
     {
+      "requirements": ["PR-001", "MR-006", "MR-023", "AR-003", "AR-007", "AR-010", "AC-002"],
+      "file": "tests/integration/postgres-management-repository.test.ts",
+      "testName": "persists the complete risk-to-decision-to-action-to-evidence chain with outbox and audit facts",
+      "failureMode": "风险、决定、行动、完成证据、责任人、审计或 Outbox 未在 PostgreSQL 中形成可追踪且原子提交的闭环。"
+    },
+    {
       "requirements": ["PR-002", "MR-005"],
       "file": "tests/unit/enterprise-intelligence.test.ts",
       "testName": "records only evidenced metric facts and produces a read-only operating inference",

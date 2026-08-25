@@ -14,7 +14,7 @@
 
 | ID | 状态 | 主要实现/证据 |
 |---|---|---|
-| PR-001 | 自动验收 | `management-loop.test.ts`、`enterprise-governance.test.ts`：管理对象进入风险—决策—行动—复盘或变更闭环 |
+| PR-001 | 自动验收 | `management-loop.test.ts`、`postgres-management-repository.test.ts`、`enterprise-governance.test.ts`：管理对象进入风险—决策—行动—证据—复盘或变更闭环 |
 | PR-002 | 自动验收 | `agent-security.eval.test.ts`、`enterprise-intelligence.test.ts`：事实、推断、提案和正式决定分层 |
 | PR-003 | 自动验收 | `management-loop.test.ts`、`enterprise-intelligence.test.ts`：Owner 与唯一 Accountable 约束 |
 | PR-004 | 自动验收 | `connector-pipeline.test.ts`、`integration-acceptance-api.test.ts`、`client-platform-api.test.ts`：网页/PWA/三平台复用同一对象与应用服务 |
@@ -53,7 +53,7 @@
 | MR-020 | 自动验收 | `workflow-governance.test.ts`、`postgres-governance-repositories.test.ts`：运行实例锁定发布版本 |
 | MR-021 | 自动验收 | `meeting-governance.test.ts`：讨论、结论、决定和行动分层 |
 | MR-022 | 自动验收 | `management-loop.test.ts`、`meeting-governance.test.ts`：议题、选项、依据、决定人与复审日期 |
-| MR-023 | 自动验收 | `management-loop.test.ts`：行动项 Owner、期限、验收标准与来源决定 |
+| MR-023 | 自动验收 | `management-loop.test.ts`、`postgres-management-repository.test.ts`：行动项 Owner、期限、验收标准、来源决定与完成证据 |
 | MR-024 | 自动验收 | `management-loop.test.ts`：旧决定保留为 superseded，新决定原子记录 supersedes 关系 |
 | MR-025 | 自动验收 | `meeting-governance.test.ts`：纪要经参会确认后幂等沉淀正式决定与行动 |
 | MR-026 | 自动验收 | `enterprise-intelligence.test.ts`：绩效事实只取目标、贡献、职责和明确反馈 |
@@ -88,11 +88,11 @@
 |---|---|---|
 | AR-001 | 自动验收 | `foundation-migration.test.ts`、`production-identity.test.ts`：内部 UUID 与外部身份映射分离 |
 | AR-002 | 自动验收 | `foundation-migration.test.ts`、各 PostgreSQL 仓储测试：tenant scope 与强制 RLS |
-| AR-003 | 自动验收 | `management-loop.test.ts`、`enterprise-governance.test.ts`：乐观锁和版本冲突 |
+| AR-003 | 自动验收 | `management-loop.test.ts`、`management-api.test.ts`、`enterprise-governance.test.ts`：乐观锁和版本冲突 |
 | AR-004 | 自动验收 | `postgres-client-platform.test.ts`、`postgres-acceptance-repository.test.ts`：强制 RLS、原子摘要审计与追加式验收证据 |
 | AR-005 | 自动验收 | `events-and-connectors.test.ts`、`audit-event.test.ts`、`test-notification-governance.test.ts`：脱敏摘要、哈希和解析版本 |
 | AR-006 | 本地 Gate | `foundation-migration.test.ts`、`production-readiness.test.ts`：模块化单体与统一迁移/运行门禁 |
-| AR-007 | 自动验收 | `management-loop.test.ts`、`postgres-agent-store.test.ts`：应用服务、领域事件和 Outbox 边界 |
+| AR-007 | 自动验收 | `management-loop.test.ts`、`postgres-management-repository.test.ts`、`postgres-agent-store.test.ts`：应用服务、领域事件和业务事务内 Outbox 边界 |
 | AR-008 | 自动验收 | `platform-connectors.test.ts`：业务内核只依赖统一 Connector Port |
 | AR-009 | 自动验收 | `postgres-durable-runtime.test.ts`、`postgres-agent-worker.test.ts`：数据库租约、异步 Agent Job、崩溃恢复与人工核对 |
 | AR-010 | 自动验收 | `postgres-durable-runtime.test.ts`：完整 Inbox 消费、Outbox 幂等发布回执、租约回收与重试终态 |
@@ -118,7 +118,7 @@
 | ID | 状态 | 主要实现/证据 |
 |---|---|---|
 | AC-001 | M11 + 外部 Gate | 本地已有连接器预检和局部共享状态证据；需先完成持久化四渠道链路，再执行三平台真实测试企业 E2E |
-| AC-002 | 自动验收 | `management-api.test.ts`、`governance-api.test.ts`、`postgres-enterprise-governance.test.ts` 覆盖多个完整管理旅程 |
+| AC-002 | 自动验收 | `management-api.test.ts`、`postgres-management-repository.test.ts`、`governance-api.test.ts`、`postgres-enterprise-governance.test.ts` 覆盖多个完整管理旅程 |
 | AC-003 | 自动验收 | `foundation-migration.test.ts`、`postgres-authorization-resolver.test.ts`、`postgres-agent-worker.test.ts`：RLS、即时撤权和执行前再授权 |
 | AC-004 | 自动验收 | `agent-api.test.ts`、`postgres-agent-worker.test.ts`：确认只排队、Worker 二次鉴权、过期权限失败关闭 |
 | AC-005 | 自动验收 | `postgres-agent-worker.test.ts`、`postgres-durable-runtime.test.ts`：业务写入后和发布后崩溃均不重复副作用 |

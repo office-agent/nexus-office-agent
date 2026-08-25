@@ -11,11 +11,11 @@ import { createDevelopmentRequestContext, DEMO_PROJECT_ID } from "@/src/platform
 
 function fixture() {
   const events = new InMemoryEventStore();
-  const managementRepository = new InMemoryManagementLoopRepository();
+  const managementRepository = new InMemoryManagementLoopRepository(events);
   const meetingRepository = new InMemoryMeetingRepository();
   const service = new MeetingService(
     meetingRepository,
-    new ManagementLoopService(managementRepository, events),
+    new ManagementLoopService(managementRepository),
     new KnowledgeService(new InMemoryKnowledgeRepository()),
     events,
   );

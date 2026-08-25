@@ -99,8 +99,7 @@ describe("durable Agent worker journey", () => {
     await pglite.query("INSERT INTO projects(id,tenant_id,code,name,description,owner_id,status,priority,starts_at,target_end_at,health,business_value,acceptance_criteria,resource_plan) VALUES($1,$2,'P-1','交付平台','核心项目',$3,'active','high','2026-08-01','2026-12-31','watch','完成交付','业务验收','{}')", [PROJECT_ID,TENANT_ID,USER_ID]);
     await pglite.query("INSERT INTO objective_project_links(tenant_id,objective_id,project_id) VALUES($1,$2,$3)", [TENANT_ID,OBJECTIVE_ID,PROJECT_ID]);
 
-    const events = new PostgresEventStore(database);
-    const management = new ManagementLoopService(new PostgresManagementLoopRepository(database), events);
+    const management = new ManagementLoopService(new PostgresManagementLoopRepository(database));
     const contexts = new ManagementContextProvider(management);
     const tools = new ToolRegistry();
     registerManagementTools(tools, management);

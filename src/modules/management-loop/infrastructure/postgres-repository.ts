@@ -1,4 +1,4 @@
-import type { TransactionalDatabase } from "@/src/platform/database/executor";
+import type { DatabaseExecutor, TransactionalDatabase } from "@/src/platform/database/executor";
 import type { ManagementLoopRepository, ManagementSnapshot } from "@/src/modules/management-loop/application/contracts";
 import type { Objective } from "@/src/modules/strategy/domain/objective";
 import type { Project } from "@/src/modules/delivery/domain/project";
@@ -8,6 +8,7 @@ import type { Risk } from "@/src/modules/governance/domain/risk";
 import type { Issue } from "@/src/modules/governance/domain/issue";
 import type { Decision } from "@/src/modules/governance/domain/decision";
 import type { ActionItem } from "@/src/modules/collaboration/domain/action-item";
+import type { DomainEvent } from "@/src/modules/events/domain/event-envelope";
 
 type Row = Record<string, unknown>;
 
@@ -117,6 +118,14 @@ function mapActionItem(row: Row): ActionItem {
   };
 }
 
+async function insertOutbox(executor: DatabaseExecutor, event: DomainEvent): Promise<void> {
+  await executor.query(
+    `INSERT INTO outbox_events(id,tenant_id,event_type,aggregate_type,aggregate_id,aggregate_version,payload,trace_id,occurred_at)
+     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO NOTHING`,
+    [event.id,event.tenantId,event.type,event.aggregateType,event.aggregateId,event.aggregateVersion,event.payload,event.traceId,event.occurredAt],
+  );
+}
+
 export class PostgresManagementLoopRepository implements ManagementLoopRepository {
   constructor(private readonly database: TransactionalDatabase) {}
 
@@ -145,22 +154,46 @@ export class PostgresManagementLoopRepository implements ManagementLoopRepositor
     });
   }
 
-  async saveRisk(risk: Risk): Promise<void> {
-    await this.database.withTenant(risk.tenantId, (executor) => executor.query(
+  async getRisk(tenantId: string, id: string): Promise<Risk | null> {
+    return this.database.withTenant(tenantId, async (executor) => {
+      const rows = await executor.query("SELECT * FROM risks WHERE tenant_id=$1 AND id=$2", [tenantId,id]);
+      return rows[0] ? mapRisk(rows[0]) : null;
+    });
+  }
+
+  async saveRisk(risk: Risk, event: DomainEvent): Promise<void> {
+    await this.database.withTenant(risk.tenantId, async (executor) => {
+      await executor.query(
       `INSERT INTO risks(id,tenant_id,project_id,title,description,owner_id,probability,impact,status,response_strategy,response_plan,review_at,source_type,source_ref,version)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,description=EXCLUDED.description,owner_id=EXCLUDED.owner_id,probability=EXCLUDED.probability,impact=EXCLUDED.impact,status=EXCLUDED.status,response_strategy=EXCLUDED.response_strategy,response_plan=EXCLUDED.response_plan,review_at=EXCLUDED.review_at,source_type=EXCLUDED.source_type,source_ref=EXCLUDED.source_ref,version=EXCLUDED.version,updated_at=now()`,
       [risk.id,risk.tenantId,risk.projectId,risk.title,risk.description,risk.ownerId,risk.probability,risk.impact,risk.status,risk.responseStrategy ?? null,risk.responsePlan ?? null,risk.reviewAt ?? null,risk.sourceType,risk.sourceRef ?? null,risk.version],
-    ).then(() => undefined));
+      );
+      await insertOutbox(executor, event);
+    });
   }
 
-  async saveDecision(decision: Decision): Promise<void> {
-    await this.database.withTenant(decision.tenantId, (executor) => executor.query(
+  async saveDecision(decision: Decision, actionItems: ActionItem[], event: DomainEvent): Promise<void> {
+    await this.database.withTenant(decision.tenantId, async (executor) => {
+      if (!decision.projectId) throw new Error("DECISION_PROJECT_REQUIRED");
+      const projects = await executor.query("SELECT id FROM projects WHERE tenant_id=$1 AND id=$2", [decision.tenantId,decision.projectId]);
+      if (projects.length !== 1) throw new Error("PROJECT_NOT_FOUND");
+      if (decision.riskId) {
+        const risks = await executor.query("SELECT id FROM risks WHERE tenant_id=$1 AND id=$2 AND project_id=$3", [decision.tenantId,decision.riskId,decision.projectId]);
+        if (risks.length !== 1) throw new Error("RISK_PROJECT_MISMATCH");
+      }
+      await executor.query(
       `INSERT INTO decisions(id,tenant_id,project_id,risk_id,title,context,options,selected_option,rationale,owner_id,decided_by,status,review_at,supersedes_id,version)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,context=EXCLUDED.context,options=EXCLUDED.options,selected_option=EXCLUDED.selected_option,rationale=EXCLUDED.rationale,owner_id=EXCLUDED.owner_id,decided_by=EXCLUDED.decided_by,status=EXCLUDED.status,review_at=EXCLUDED.review_at,supersedes_id=EXCLUDED.supersedes_id,version=EXCLUDED.version,updated_at=now()`,
       [decision.id,decision.tenantId,decision.projectId ?? null,decision.riskId ?? null,decision.title,decision.context,decision.options,decision.selectedOption ?? null,decision.rationale ?? null,decision.ownerId,decision.decidedBy ?? null,decision.status,decision.reviewAt ?? null,decision.supersedesId ?? null,decision.version],
-    ).then(() => undefined));
+      );
+      for (const item of actionItems) {
+        if (item.projectId !== decision.projectId || item.decisionId !== decision.id) throw new Error("ACTION_ITEM_DECISION_MISMATCH");
+        await this.insertActionItem(executor, item);
+      }
+      await insertOutbox(executor, event);
+    });
   }
 
   async getDecision(tenantId: string, id: string): Promise<Decision | null> {
@@ -170,7 +203,7 @@ export class PostgresManagementLoopRepository implements ManagementLoopRepositor
     });
   }
 
-  async replaceDecision(original: Decision, replacement: Decision, expectedOriginalVersion: number): Promise<boolean> {
+  async replaceDecision(original: Decision, replacement: Decision, expectedOriginalVersion: number, event: DomainEvent): Promise<boolean> {
     return this.database.withTenant(original.tenantId, async (executor) => {
       const updated = await executor.query(
         "UPDATE decisions SET status='superseded',version=$3,updated_at=now() WHERE tenant_id=$1 AND id=$2 AND version=$4 AND status IN ('decided','executing','verified') RETURNING id",
@@ -182,11 +215,10 @@ export class PostgresManagementLoopRepository implements ManagementLoopRepositor
          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
         [replacement.id,replacement.tenantId,replacement.projectId ?? null,replacement.riskId ?? null,replacement.title,replacement.context,replacement.options,replacement.selectedOption!,replacement.rationale!,replacement.ownerId,replacement.decidedBy!,replacement.status,replacement.reviewAt ?? null,replacement.supersedesId!,replacement.version],
       );
+      await insertOutbox(executor, event);
       return true;
     });
   }
-
-  async saveActionItems(items: ActionItem[]): Promise<void> { for (const item of items) await this.saveActionItem(item); }
 
   async getActionItem(tenantId: string, id: string): Promise<ActionItem | null> {
     return this.database.withTenant(tenantId, async (executor) => {
@@ -195,13 +227,17 @@ export class PostgresManagementLoopRepository implements ManagementLoopRepositor
     });
   }
 
-  async saveActionItem(item: ActionItem): Promise<void> {
-    await this.database.withTenant(item.tenantId, (executor) => executor.query(
-      `INSERT INTO action_items(id,tenant_id,decision_id,project_id,title,description,owner_id,due_at,acceptance_criteria,status,completed_at,completion_evidence,version)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-       ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,description=EXCLUDED.description,owner_id=EXCLUDED.owner_id,due_at=EXCLUDED.due_at,acceptance_criteria=EXCLUDED.acceptance_criteria,status=EXCLUDED.status,completed_at=EXCLUDED.completed_at,completion_evidence=EXCLUDED.completion_evidence,version=EXCLUDED.version,updated_at=now()`,
-      [item.id,item.tenantId,item.decisionId ?? null,item.projectId ?? null,item.title,item.description,item.ownerId,item.dueAt,item.acceptanceCriteria,item.status,item.completedAt ?? null,item.completionEvidence ?? null,item.version],
-    ).then(() => undefined));
+  async saveActionItem(item: ActionItem, expectedVersion: number, event: DomainEvent): Promise<boolean> {
+    return this.database.withTenant(item.tenantId, async (executor) => {
+      const rows = await executor.query(
+        `UPDATE action_items SET status=$3,completed_at=$4,completion_evidence=$5,version=$6,updated_at=now()
+         WHERE tenant_id=$1 AND id=$2 AND version=$7 AND status IN ('open','in_progress','blocked') RETURNING id`,
+        [item.tenantId,item.id,item.status,item.completedAt ?? null,item.completionEvidence ?? null,item.version,expectedVersion],
+      );
+      if (rows.length !== 1) return false;
+      await insertOutbox(executor, event);
+      return true;
+    });
   }
 
   async getTask(tenantId: string, id: string): Promise<DeliveryTask | null> {
@@ -211,21 +247,37 @@ export class PostgresManagementLoopRepository implements ManagementLoopRepositor
     });
   }
 
-  async saveTask(task: DeliveryTask): Promise<void> {
-    await this.database.withTenant(task.tenantId, (executor) => executor.query(
-      `INSERT INTO tasks(id,tenant_id,project_id,milestone_id,parent_id,title,description,assignee_id,status,priority,due_at,completed_at,version)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-       ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,description=EXCLUDED.description,assignee_id=EXCLUDED.assignee_id,status=EXCLUDED.status,priority=EXCLUDED.priority,due_at=EXCLUDED.due_at,completed_at=EXCLUDED.completed_at,version=EXCLUDED.version,updated_at=now()`,
-      [task.id,task.tenantId,task.projectId,task.milestoneId ?? null,task.parentId ?? null,task.title,task.description,task.assigneeId,task.status,task.priority,task.dueAt ?? null,task.completedAt ?? null,task.version],
-    ).then(() => undefined));
+  async saveTask(task: DeliveryTask, expectedVersion: number, event: DomainEvent): Promise<boolean> {
+    return this.database.withTenant(task.tenantId, async (executor) => {
+      const rows = await executor.query(
+        `UPDATE tasks SET status=$3,completed_at=$4,version=$5,updated_at=now()
+         WHERE tenant_id=$1 AND id=$2 AND version=$6 RETURNING id`,
+        [task.tenantId,task.id,task.status,task.completedAt ?? null,task.version,expectedVersion],
+      );
+      if (rows.length !== 1) return false;
+      await insertOutbox(executor, event);
+      return true;
+    });
   }
 
-  async saveIssue(issue: Issue): Promise<void> {
-    await this.database.withTenant(issue.tenantId, (executor) => executor.query(
+  async saveIssue(issue: Issue, event: DomainEvent): Promise<void> {
+    await this.database.withTenant(issue.tenantId, async (executor) => {
+      await executor.query(
       `INSERT INTO issues(id,tenant_id,project_id,risk_id,title,description,owner_id,severity,status,resolution,version)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,description=EXCLUDED.description,owner_id=EXCLUDED.owner_id,severity=EXCLUDED.severity,status=EXCLUDED.status,resolution=EXCLUDED.resolution,version=EXCLUDED.version,updated_at=now()`,
       [issue.id,issue.tenantId,issue.projectId,issue.riskId ?? null,issue.title,issue.description,issue.ownerId,issue.severity,issue.status,issue.resolution ?? null,issue.version],
-    ).then(() => undefined));
+      );
+      await insertOutbox(executor, event);
+    });
+  }
+
+  private async insertActionItem(executor: DatabaseExecutor, item: ActionItem): Promise<void> {
+    await executor.query(
+      `INSERT INTO action_items(id,tenant_id,decision_id,project_id,title,description,owner_id,due_at,acceptance_criteria,status,completed_at,completion_evidence,version)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,description=EXCLUDED.description,owner_id=EXCLUDED.owner_id,due_at=EXCLUDED.due_at,acceptance_criteria=EXCLUDED.acceptance_criteria,status=EXCLUDED.status,completed_at=EXCLUDED.completed_at,completion_evidence=EXCLUDED.completion_evidence,version=EXCLUDED.version,updated_at=now()`,
+      [item.id,item.tenantId,item.decisionId ?? null,item.projectId ?? null,item.title,item.description,item.ownerId,item.dueAt,item.acceptanceCriteria,item.status,item.completedAt ?? null,item.completionEvidence ?? null,item.version],
+    );
   }
 }

@@ -6,6 +6,7 @@ import type { ActionItem } from "@/src/modules/collaboration/domain/action-item"
 import type { Milestone } from "@/src/modules/delivery/domain/milestone";
 import type { DeliveryTask } from "@/src/modules/delivery/domain/task";
 import type { Issue } from "@/src/modules/governance/domain/issue";
+import type { DomainEvent } from "@/src/modules/events/domain/event-envelope";
 
 export type ManagementSnapshot = {
   objective: Objective;
@@ -21,14 +22,14 @@ export type ManagementSnapshot = {
 
 export interface ManagementLoopRepository {
   getSnapshot(tenantId: string, projectId: string): Promise<ManagementSnapshot | null>;
-  saveRisk(risk: Risk): Promise<void>;
-  saveDecision(decision: Decision): Promise<void>;
+  getRisk(tenantId: string, id: string): Promise<Risk | null>;
+  saveRisk(risk: Risk, event: DomainEvent): Promise<void>;
+  saveDecision(decision: Decision, actionItems: ActionItem[], event: DomainEvent): Promise<void>;
   getDecision(tenantId: string, id: string): Promise<Decision | null>;
-  replaceDecision(original: Decision, replacement: Decision, expectedOriginalVersion: number): Promise<boolean>;
-  saveActionItems(items: ActionItem[]): Promise<void>;
+  replaceDecision(original: Decision, replacement: Decision, expectedOriginalVersion: number, event: DomainEvent): Promise<boolean>;
   getActionItem(tenantId: string, id: string): Promise<ActionItem | null>;
-  saveActionItem(item: ActionItem): Promise<void>;
+  saveActionItem(item: ActionItem, expectedVersion: number, event: DomainEvent): Promise<boolean>;
   getTask(tenantId: string, id: string): Promise<DeliveryTask | null>;
-  saveTask(task: DeliveryTask): Promise<void>;
-  saveIssue(issue: Issue): Promise<void>;
+  saveTask(task: DeliveryTask, expectedVersion: number, event: DomainEvent): Promise<boolean>;
+  saveIssue(issue: Issue, event: DomainEvent): Promise<void>;
 }
