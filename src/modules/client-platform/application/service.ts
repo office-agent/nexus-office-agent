@@ -7,21 +7,31 @@ function requirePermission(context: RequestContext, permission: string): void {
   if (!context.permissions.includes(permission)) throw new Error(`POLICY_DENIED:${permission}`);
 }
 
+function hasRequiredTrust(device: Pick<ClientDevice, "trustLevel">, policy: ClientPolicy): boolean {
+  return !policy.managedDeviceRequired || device.trustLevel === "managed" || device.trustLevel === "attested";
+}
+
+function meetsCurrentPolicy(device: Pick<ClientDevice, "appVersion" | "trustLevel">, policy: ClientPolicy): boolean {
+  return compareVersions(device.appVersion, policy.minimumVersion) >= 0 && hasRequiredTrust(device, policy);
+}
+
 export class ClientPlatformService {
   constructor(private readonly repository: ClientPlatformRepository, private readonly policy: ClientPolicy = clientPolicyFromEnvironment()) {}
 
   async bootstrap(context: RequestContext, installationId?: string, appVersion?: string) {
     requirePermission(context, "client:bootstrap:read");
     const device = installationId ? await this.repository.getByInstallation(context.tenantId, context.actorId, installationId) : undefined;
-    const versionSupported = appVersion ? compareVersions(appVersion, this.policy.minimumVersion) >= 0 : false;
-    const trustedEnough = !this.policy.managedDeviceRequired || device?.trustLevel === "managed" || device?.trustLevel === "attested";
+    const versionSupported = device
+      ? compareVersions(device.appVersion, this.policy.minimumVersion) >= 0
+      : appVersion ? compareVersions(appVersion, this.policy.minimumVersion) >= 0 : false;
+    const eligibleDevice = Boolean(device?.status === "active" && meetsCurrentPolicy(device, this.policy));
     return {
       policy: this.policy,
       versionSupported,
       device,
       features: {
-        offlineDrafts: Boolean(device?.status === "active" && versionSupported && trustedEnough && this.policy.offlineDrafts === "internal"),
-        push: Boolean(device?.status === "active" && versionSupported && trustedEnough && this.policy.pushEnabled),
+        offlineDrafts: Boolean(eligibleDevice && this.policy.offlineDrafts === "internal"),
+        push: Boolean(eligibleDevice && this.policy.pushEnabled),
       },
       shortcuts: [
         { id: "today", label: "今日工作台", path: "/?view=today" },
@@ -41,13 +51,14 @@ export class ClientPlatformService {
     requirePermission(context, "client:device:register");
     const existing = await this.repository.getByInstallation(context.tenantId, context.actorId, input.installationId);
     if (existing?.status === "revoked") throw new Error("CLIENT_DEVICE_REVOKED");
-    const versionSupported = compareVersions(input.appVersion, this.policy.minimumVersion) >= 0;
+    const trustLevel = existing?.trustLevel ?? "unmanaged";
+    const status = meetsCurrentPolicy({ appVersion: input.appVersion, trustLevel }, this.policy) ? "active" : "pending";
     const timestamp = now.toISOString();
     const device: ClientDevice = existing ? {
-      ...existing, ...input, lastSeenAt: timestamp, status: versionSupported && !this.policy.managedDeviceRequired ? "active" : "pending", version: existing.version + 1,
+      ...existing, ...input, lastSeenAt: timestamp, status, version: existing.version + 1,
     } : {
       id: randomUUID(), tenantId: context.tenantId, userId: context.actorId, ...input,
-      trustLevel: "unmanaged", status: versionSupported && !this.policy.managedDeviceRequired ? "active" : "pending", pushEnabled: false,
+      trustLevel, status, pushEnabled: false,
       lastSeenAt: timestamp, registeredAt: timestamp, version: 1,
     };
     await this.repository.saveDevice(device);
@@ -70,7 +81,7 @@ export class ClientPlatformService {
     const device = await this.repository.getDevice(context.tenantId, deviceId);
     if (!device) throw new Error("CLIENT_DEVICE_NOT_FOUND");
     if (device.userId !== context.actorId) throw new Error("POLICY_DENIED:client:device:ownership");
-    if (!this.policy.pushEnabled || device.status !== "active") throw new Error("CLIENT_PUSH_DISABLED");
+    if (!this.policy.pushEnabled || device.status !== "active" || !meetsCurrentPolicy(device, this.policy)) throw new Error("CLIENT_PUSH_DISABLED");
     await this.repository.savePushSubscription({ id: randomUUID(), tenantId: context.tenantId, userId: context.actorId, deviceId, ...subscription, status: "active", createdAt: now.toISOString(), version: 1 });
     await this.repository.saveDevice({ ...device, pushEnabled: true, lastSeenAt: now.toISOString(), version: device.version + 1 });
   }
