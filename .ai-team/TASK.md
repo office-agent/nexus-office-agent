@@ -2,9 +2,9 @@
 
 - ID: `P02`
 - Title: `身份、权限、多租户与客户端平台验证`
-- Status: `active`
+- Status: `handoff`
 - Owner: `917135271`
-- Next owner: `unassigned`
+- Next owner: `P03`
 
 ## Goal
 
@@ -47,16 +47,17 @@
 - 已确认客户端注册 Schema 拒绝客户端自报租户、用户和信任等级；设备仓储按租户和用户查询，PWA 不缓存 API/业务导航，推送订阅敏感数据采用绑定租户、用户和设备上下文的加密信封。
 - 已修复客户端当前策略重校验缺口：已登记设备不再通过请求自报高版本绕过最低版本判断，推送订阅会重新校验当前版本和受管设备要求，可信设备重新登记时可按当前策略恢复 active。
 - 已新增策略升级回归测试，覆盖最低版本上调、受管设备要求启用、推送拒绝和可信设备重新登记。
+- 已创建 PR `#1`，P02 代码、测试和 `.ai-team/TASK.md` 保持在同一交付分支，GitHub `repo-task-sync` 检查通过。
 
 ## Pending
 
 - 真实企业 OIDC、MFA、用户停用同步、受管设备证明和真实推送服务仍需在外部测试环境验证，本地自动化只验证代码契约。
 - 全仓库 TypeScript 检查仍被 P01 已记录的 3 个 Artifact Route 模块缺失阻塞；本轮 P02 变更未新增类型错误。
-- 创建 P02 PR并完成代码审查；项目负责人指定 P03 后再更新 `Next owner` 和交接状态。
+- P03 接续经营管理闭环验证；P02 的外部环境 Gate 和全仓库基线问题不作为 P03 的默认修复范围。
 
 ## Next step
 
-提交 P02 分支并创建 PR；评审重点检查客户端当前策略是否始终基于服务端持久化设备事实，以及最低版本和信任策略变化后的兼容行为。
+P03 拉取最新 `main`，运行 `node .ai-team/check.mjs --base origin/main` 验收交接，创建 `codex/p03-management-loop` 分支，将当前任务更新为 P03/active；随后从 `src/modules/management-loop` 和相关 API、测试开始，验证目标、项目、风险/问题、决策、行动与证据的业务闭环。
 
 ## Verification
 
@@ -70,5 +71,5 @@
 ## Handoff note
 
 - From: `917135271`
-- To: `unassigned`
-- Summary: P02 已完成身份、权限、多租户与客户端平台审计，并补强客户端当前策略重校验；当前等待 PR 评审及 P03 负责人确认。
+- To: `P03`
+- Summary: P02 已完成身份、权限、多租户与客户端平台审计，补强客户端当前策略重校验并通过相关测试、Lint、VibeCollab 与 GitHub 协作检查；P03 可从最新 main 创建独立分支，开始经营管理闭环验证。
