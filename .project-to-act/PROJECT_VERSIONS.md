@@ -3,6 +3,7 @@
 ## 当前版本
 
 - 版本号：`0.14.0-work-command-center`（本地工程发布候选）
+- E-102 公开仓库交付：按用户明确要求将当前工作树中已验证的 Agent 开发模块、对话记忆修复、测试/文档与完整 `.project-to-act` 台账提交到公开 GitHub 仓库 `https://github.com/redmaplewww/nexus-office-agent` 的 `main`，commit 为 `da7dbf3`。提交前通过 staged diff 检查、敏感模式检查与 `project-to-act --validate`；本地 `test-artifacts/` 生成物未纳入公开提交。该动作只证明源码交付，不改变 `0.14.0-work-command-center` 工程候选状态，也不把本地工程证据表述为生产能力。
 - E-101 最新增量：M35/F-076 的测试阶段新增 `agentops-awesome-list` 推荐，并明确其仅用于按实际复杂度执行只读健康检查，发现架构缺口、功能风险和优化建议，不修改项目、不授予权限、不替代功能测试或交付 Gate。API、工作台、说明文档、集成测试和项目台账已同步；API 定向 1 项及全量 123 个测试文件/451 项通过，8 个文件/26 项跳过，typecheck、零警告 Lint、Next 生产构建通过。本增量不变更公开版本号。
 - E-100 最新增量：新增 M35/F-076“Agent 开发”独立模块，完成需求交接到 `project-to-act` 五文档原子留档、主要版本 Git SHA/完整 Diff/摘要/功能清单、逐版本功能测试和交付清单冻结；服务端以权限、幂等、CAS、RLS、原子审计和失败关闭门禁约束全流程，界面显示团队进度及 `project-to-act`、`repo-task-sync`、`llm-api-config`、`ui-design`、`aawo-agent-tester`、`avoid-overkill` Skill 建议。全量 123 个测试文件/451 项通过，8 个文件/26 项跳过，typecheck、零警告 Lint、Next 生产构建、宽屏与 390×844 浏览器完整旅程通过。该增量不变更公开版本号，不把本地/PGlite 证据表述为生产 PostgreSQL 或企业运行完成。
 - E-097 最新增量：M27 在 E-096 持久交付骨架之上接入受控 Pi Runtime Tool policy/approval Extension。ResourceLoader 强制注入企业策略 Extension，未知/未分类/R4/超 Profile 上限 fail-closed；R2/R3 创建持久 Approval Proposal，在 Pi Tool 调用内等待决策，批准后以 manifestDigest/profileVersion/policyVersion/sandboxRunId 二次重验并恢复，拒绝/过期/撤销/取消/中断/漂移/超时均不执行。Runner 持久化 awaiting/required/resumed/denied 事件并保持 lease heartbeat；生产 approver directory 当前 fail-closed。`enterprise-policy-extension.ts` SHA-256 `0B9B09BFD52B00D4E88B51308BB8961EB31F5EA7452D5F4FE16C9EB1603BE80D`，`pi-runtime-approval.ts` `1D89E5231659E961E3BB3BEE51C819FB9BD8D604AC72AFB89C5ABBCB2DA2D459`，`runtime-adapter.ts` `76E4E4310E6289E2FADAD6B221607A682BB535C39076A392B61698E62524267D`，`runner.ts` `A5F89365143EEE95C36EB41231A0D80DD7B6A3A30BF9D1405B15858158DACCBA`，policy 测试 `D6D5F9777492E52A4E86CA200D4468D2C530464978FFB6C2A8EB5721E48EAF60`，ResourceLoader 测试 `C10411592171512E7BC78EB8059BD60AF22C72C7DA4FE472101ED87F610D5371`，Runner bundle `2BD3F3CBE59E9E49A74CD12E29805BA08E114E2A5170C979C17D148486B66342`；定向 4 个测试文件/32 项、全量 119 个测试文件/441 项通过，8 个文件/26 个测试跳过，typecheck、Lint、隔离 Next build 通过。`pi-sandbox:preflight` 为 `not_ready`/本次退出 1，Docker Desktop 不替代 Firecracker/Kata；真实组织审批、模型/Tool、微 VM、OpenBao/受控出站、Forgejo/发布目标和 G-027/G-030/G-031 仍 no-go，不生成发布版本。
@@ -48,7 +49,7 @@
 - E-082 当前候选复核：六类 virtual/local Vibe Coding journey 聚焦 7 项通过；全量 110 个测试文件/398 项通过、8 个文件/26 个测试跳过，typecheck、零警告 lint、project-to-act check/validate 通过；Review 写入拒绝、PR 临时分支 push 和 cleanup failure `unknown` 均有回归；该证据不替代 E-081 的 PostgreSQL state、多租户 RLS、真实微 VM、Forgejo/S3、测试/扫描、URL 过期/越权、数据库故障恢复和 G-028，生产 `/ready` 与版本 no-go 结论不变。
 - E-099 公开开源快照：源码、测试、通用设计文档、脱敏功能清单和开源交接手册已以 Apache-2.0 发布到 https://github.com/redmaplewww/nexus-office-agent，公开 commit 为 `3fee719840976943e3eedae492585898093c768f`；这只是源码交付，不生成生产、试点或可发布版本，内部 `.project-to-act`、真实环境配置和外部 Gate 继续保持本机/私有边界。
 
-- 最后更新：2026-08-20
+- 最后更新：2026-08-26
 
 - 最新实现证据校正：E-088 为当前增量事实；E-087/E-086/E-085/E-084/E-083 及 E-081/E-079/E-080、E-075～E-078 长条保留为历史摘要，不覆盖 E-088 的 112 个测试文件/408 项通过、8 个文件/26 个测试跳过、Supervisor object scope/Grant 回归和 G-027/G-028 仍为 no-go 的结论。
 

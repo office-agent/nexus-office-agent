@@ -12,7 +12,8 @@
 - E-096 在 E-095 之上补齐本地持久交付骨架：审批等待态只在重新读取对象版本并 CAS 激活后进入 `queued`；`pi-change-delivery` Durable Worker 接入租户轮询；0041 注册 Worker 角色；0042 增加 lease owner/token/expiry 与旧 Worker fencing，过期租约只进入 `unknown` 且不重放外部副作用；服务端 Forgejo Gateway 支持 tenant-scoped credentialRef、OpenBao/受管 Secret 引用、PR 幂等发现、mergeability 刷新和显式开启的合并，外部交付默认关闭，未配置时 fail-closed。聚焦 5 个测试文件/20 项、全量 118 个测试文件/435 项通过、8 个文件/26 个测试跳过，typecheck、零警告 Lint、Pi Runner bundle 和隔离 Next 生产构建通过；当前 Windows 沙盒 preflight 为 `not_ready`，真实 Firecracker/Kata、OpenBao、组织审批人、受控出站和真实 Forgejo/发布目标仍未通过 G-027/G-030/G-031。
 - E-097 在 E-096 之上补齐 Pi Runtime 的企业 Tool policy/approval wiring：新增受控 inline `enterprise-policy-extension`，由 ResourceLoader 在最终资源快照后强制注入；未知 Tool、未分类风险、超 Profile 上限和 R4 均 fail-closed，R0/R1 直通，R2/R3 在同一 Pi Tool 调用内创建持久 Approval Proposal、等待决策，并在批准后按当前 Session/Run 的 manifestDigest、profileVersion、policyVersion、sandboxRunId 二次重验后恢复执行；拒绝、过期、撤销、取消、中断、对象漂移和等待超时均不执行 Tool。Pi Runner 已将 awaiting_approval、approval_required、approval_resumed、approval_denied 写入 Run/Session 事件并保持租约心跳；生产 Runner 的 approver directory 当前为 fail-closed，真实组织审批目录、微 VM、模型/Tool 执行、OpenBao/受控出站和 G-027/G-030/G-031 仍未通过。聚焦 4 个文件/32 项、全量 119 个测试文件/441 项通过、8 个文件/26 个测试跳过，typecheck、零警告 Lint、Pi Runner bundle 和隔离 Next 生产构建通过；`pi-sandbox:preflight` 当前为 `not_ready`/本次退出 1，Docker Desktop 可用但不替代 Firecracker/Kata。回退停止 Runner 的 approval service/高风险 Tool consumer，保持审批与高风险执行 fail-closed，保留事件/提案事实并回到 E-096 制品。
 - E-099 已完成公开开源快照：当前源码、测试、通用设计文档、脱敏功能清单和开源交接手册以 Apache-2.0 许可证发布到 https://github.com/redmaplewww/nexus-office-agent 的 main，公开提交为 `3fee719840976943e3eedae492585898093c768f`；内部 `.project-to-act`、真实部署证据、环境文件、运行产物和企业地址未发布。该公开提交仍是 `0.14.0-work-command-center` 工程候选，不改变 G-027～G-038 的 no-go 结论。
-- 最后更新：2026-08-20
+- E-102 已按用户明确要求更新公开仓库：当前验证源码、测试、文档与完整 `.project-to-act` 台账已推送至上述仓库 `main`，公开提交为 `da7dbf3`；本地 `test-artifacts/` 生成物、环境文件与真实部署证据未推送。该提交只代表源码交付，不改变 `0.14.0-work-command-center` 工程候选及 G-027～G-038 no-go 边界。
+- 最后更新：2026-08-26
 
 ## 项目目标
 
