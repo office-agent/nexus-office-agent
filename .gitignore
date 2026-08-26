@@ -17,7 +17,6 @@ out/
 .DS_Store
 
 # Internal project ledger and environment-specific deployment evidence.
-.project-to-act/
 docs/19-vastmind-wecom-rollout.md
 deploy/single-host/vastmind-office.nginx
 public/brand/vastmind-wecom-icon*.png
