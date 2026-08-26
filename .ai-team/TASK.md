@@ -53,15 +53,19 @@
 - 本次未修改 `src/modules/enterprise-governance` 或其他产品代码。
 - 交付前最新 P04 聚焦回归和 lint 均通过；typecheck 仅报告 P03 已记录的 3 个 Artifact Route 模块缺失，未出现 P04 类型错误。
 - handoff 状态 VibeCollab 检查返回 `Result: valid`，Private sessions 保持 disabled。
+- P04 变更已通过提交 `3a2ff00` 提交并推送，已创建 PR #3。
+- PR #3 的最新 GitHub `repo-task-sync` 自动检查已通过。
+- PR #3 评审期间，负责人独立复跑 P04 聚焦回归，3 个测试文件、13 项测试全部通过；`node .ai-team/check.mjs --base origin/main` 返回 `Result: valid`。
 
 ## Pending
 
 - 全仓库 typecheck 仍受 P03 已记录的 3 个 Artifact Route 模块缺失影响。
-- P04 尚待提交、推送、创建 PR、通过检查并合并；P05 应从合并提交接棒。
+- PR #3 当前为 open，等待负责人复审并合并。
+- P05 必须等待 PR #3 合并到 `main` 后，再从最新 `main` 创建 P05 分支并接棒。
 
 ## Next step
 
-复核最终差异；将 P04 测试和 TASK 记录作为同一提交提交，推送当前分支并创建 PR。PR 经检查和合并后，由 P05 从合并提交接棒。
+PR #3 复审、检查通过并合并到 `main` 后，由 P05 拉取最新 `main` 验收交接，创建 P05 分支，将 `Owner` 更新为 P05、`Status` 更新为 `active`，再开始 P05 工作。
 
 ## Verification
 
@@ -74,9 +78,15 @@
 - [x] `npm run typecheck`：exit 1；仅 `tests/integration/task-command-api.test.ts` 第 10 至 12 行报告 3 个已记录的 Artifact Route 模块缺失 `TS2307`，未出现 P04 类型错误。
 - [x] `git diff --check`：exit 0。
 - [x] handoff 状态 `node .ai-team/check.mjs --base origin/main`：exit 0，`Result: valid`，Private sessions disabled。
+- [x] PR #3 已创建，最新 GitHub `repo-task-sync` 自动检查通过。
+- [x] PR #3 评审复跑：3 个测试文件、13 项测试全部通过；`node .ai-team/check.mjs --base origin/main` 返回 `Result: valid`。
+- [x] 交接事实更新后 `node .ai-team/check.mjs --base origin/main`：exit 0，`Result: valid`，Private sessions disabled。
+- [x] 交接事实更新后 P04 聚焦回归：exit 0，3 个测试文件、13 项测试全部通过。
+- [x] 交接事实更新后 `npm run lint`：exit 0。
+- [x] 交接事实更新后 `npm run typecheck`：exit 1；仍仅报告 P03 已记录的 3 个 Artifact Route 模块缺失 `TS2307`，未出现新增错误。
 
 ## Handoff note
 
 - From: `fjf1113`
 - To: `P05`
-- Summary: P04 已完成组织调整与离职责任移交、项目基线变更与关闭、重点关注、审计和补偿机制的实现链路验证；新增补偿计划在 `expiresAt` 时拒绝执行且项目与计划保持不变的单元测试。交付前 3 个聚焦测试文件、13 个测试通过，lint、补丁检查和 VibeCollab 检查通过；typecheck 仅有已记录的 3 个 Artifact Route 模块缺失，未出现 P04 类型错误。
+- Summary: P04 已完成组织调整与离职责任移交、项目基线变更与关闭、重点关注、审计和补偿机制的实现链路验证；新增补偿计划在 `expiresAt` 时拒绝执行且项目与计划保持不变的单元测试。PR #3 已创建，最新 GitHub `repo-task-sync` 自动检查通过；交付前与评审复跑均为 3 个聚焦测试文件、13 项测试通过。产品代码无需修改；typecheck 仅有已记录的 3 个 Artifact Route 模块缺失，未出现 P04 类型错误。P05 应在 PR #3 合并后从最新 `main` 创建 P05 分支并将任务切换为 P05/active。
