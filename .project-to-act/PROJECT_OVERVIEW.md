@@ -163,6 +163,10 @@
 
 ## 路线变更记录
 
+- D-040 · 2026-08-26：M35/F-076 的测试阶段新增 `agentops-awesome-list` 推荐，用于在功能测试完成后、交付前按实际复杂度执行只读健康检查，识别架构缺口、功能风险与优化建议。该 Skill 仅提供诊断和改进建议，不修改项目、不授予权限、不替代 `aawo-agent-tester` 功能测试或既有交付门禁。确认来源：当前用户补充指令。
+
+- D-039 · 2026-08-26：新增 M35/F-076“Agent 开发”团队工作流模块。需求交接必须由服务端转化为 `project-to-act` 五类文档并完成租户内归档，归档成功前不得登记开发版本；每个主要版本必须保留完整 Diff 内容摘要、服务端 SHA-256 和功能清单，每个版本必须绑定至少一项通过的功能测试后才允许生成交付清单；最终交付冻结最新五文档、全部主要版本与功能测试摘要。工作流按阶段建议 `project-to-act`、`repo-task-sync`、`llm-api-config`、`ui-design`、`aawo-agent-tester` 和 `avoid-overkill`，但 Skill 建议不授予权限或绕过门禁。确认来源：当前用户指令。
+
 - D-026 · 2026-08-20：冻结 PI-MOD-03 的调度边界：`PiRunScheduler` 是 Runner 面向 Queue 的 admission/control facade，负责本地 claim barrier、lease renew、release 和成功/失败终态入口；`PiRunStore` 负责租户 RLS、当前 owner/token/run/expiry 的 CAS 以及 PostgreSQL 事务。`complete/fail/deadLetter` 必须在同一租户事务中提交 Run 状态与命令终态，旧/过期租约返回 false；`beginDrain` 后本地 Scheduler 不暴露新 claim，Web/API 不新增执行路径。原因：把调度策略、Runner 生命周期和存储原子边界分离，避免 Worker 直接绕过 Queue 控制面；确认来源：E-070 聚焦与真实 PostgreSQL 竞争 Scheduler 回归。
 - D-027 · 2026-08-20：冻结 PI-INT-005 的 Sandbox transport 边界：创建请求使用绑定 tenant/actor/session/workspace/run/provider 的短期 HMAC Token，创建成功后每个操作请求重新签发并额外绑定 `sandboxId`；Token 只进入 `Authorization` 头，不进入请求体、RunManifest、Sandbox 持久记录、日志或模型上下文。Remote Client 必须校验 Supervisor 返回的身份回显，Orchestrator 在创建、调用、恢复、销毁前再次复验；缺少托管 Secret、Token scope/签名/TTL 失败或身份不一致时 fail-closed。原因：即使同一 Run 的元数据被错误复用，也不能把操作 Token 拿到另一沙盒；确认来源：E-071 单元、真实 PostgreSQL/独立 Runner 进程和 HTTP Supervisor 夹具回归。该决策不把夹具当作真实 Firecracker/Kata、egress proxy 或 G-027 通过证据。
 - D-028 · 2026-08-20：冻结 PI-MOD-05 的 Supervisor/backend 边界：Web/API 不启动 Firecracker；独立 Supervisor 只通过 Unix API Socket 和最小环境进程配置 Firecracker，rootfs 只读、Guest Agent 只走 vsock、CPU/内存/PID 由 cgroup v2 绑定，运行元数据不含 Token/Secret，恢复必须校验 PID/Socket/cgroup/limits/network policy；默认无 Network Controller 只能运行 `none` 网络，任何微 VM 前置或恢复证据缺失均 `/ready=503`/失败关闭。E-072 的 fake transport/process/Guest Agent 只证明适配合同和生命周期清理，不替代 G-027 的真实节点、seccomp/capability、网络攻击矩阵和 10,000 次残留检测。

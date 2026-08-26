@@ -14,6 +14,7 @@ import {
   FileCheck2,
   Gauge,
   GitBranch,
+  GitCommitHorizontal,
   Goal,
   Inbox,
   LayoutDashboard,
@@ -50,6 +51,7 @@ import { WorkCommandCenter } from "@/components/work-command-center";
 import { PiCodingWorkbench } from "@/components/pi-coding-workbench";
 import { PiGovernanceConsole } from "@/components/pi-governance-console";
 import { PiOperationsConsole } from "@/components/pi-operations-console";
+import { AgentDevelopmentWorkflow } from "@/components/agent-development-workflow";
 
 type NavItem = { id: string; label: string; icon: LucideIcon };
 type WorkspaceProject = {
@@ -128,6 +130,7 @@ type PrimaryConversationWorkspace = {
 const primaryNav: NavItem[] = [
   { id: "command", label: "工作对话", icon: MessageSquareText },
   { id: "coding", label: "开发工作台", icon: Code2 },
+  { id: "agent-development", label: "Agent 开发", icon: GitCommitHorizontal },
   { id: "agent-governance", label: "Agent 治理", icon: ShieldCheck },
   { id: "agent-operations", label: "Agent 运营", icon: Activity },
   { id: "today", label: "管理看板", icon: LayoutDashboard },
@@ -405,7 +408,7 @@ export function OfficeShell() {
 
   const identity = bootstrap?.identity;
   return (
-    <div className={`app-shell ${active === "command" ? "command-mode" : ""} ${active === "coding" ? "coding-mode" : ""} ${active !== "command" && active !== "coding" && agentOpen ? "with-agent" : ""}`}>
+    <div className={`app-shell ${active === "command" ? "command-mode" : ""} ${active === "coding" ? "coding-mode" : ""} ${active === "agent-development" ? "development-mode" : ""} ${active !== "command" && active !== "coding" && active !== "agent-development" && agentOpen ? "with-agent" : ""}`}>
       <PwaLifecycle />
       {mobileNav ? <button className="scrim" aria-label="关闭导航" onClick={() => setMobileNav(false)} /> : null}
       <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
@@ -435,7 +438,7 @@ export function OfficeShell() {
           <button className="icon-button mobile-menu" aria-label="打开导航" onClick={() => setMobileNav(true)}><Menu size={19} /></button>
           <div className="breadcrumb"><span>{identity?.tenantName ?? "企业工作区"}</span><ChevronRight size={13} /><strong>{activeLabel}</strong></div>
           <button className="global-search" onClick={() => setSearchOpen(true)}><Search size={16} /><span>搜索已授权项目，或发起管理指令…</span><kbd><Command size={11} /> K</kbd></button>
-          <div className="top-actions">{active === "command" ? <span className="command-presence"><i />在线</span> : active === "coding" ? <span className="command-presence"><i />Pi 控制面</span> : <button className="agent-toggle" aria-label={agentOpen ? "收起 AI" : "打开 AI"} onClick={() => setAgentPreference(!agentOpen)}>{agentOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}<span>{agentOpen ? "收起 AI" : "打开 AI"}</span></button>}</div>
+          <div className="top-actions">{active === "command" ? <span className="command-presence"><i />在线</span> : active === "coding" ? <span className="command-presence"><i />Pi 控制面</span> : active === "agent-development" ? <span className="command-presence"><i />研发门禁生效</span> : <button className="agent-toggle" aria-label={agentOpen ? "收起 AI" : "打开 AI"} onClick={() => setAgentPreference(!agentOpen)}>{agentOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}<span>{agentOpen ? "收起 AI" : "打开 AI"}</span></button>}</div>
         </header>
 
         <section className="content-canvas">
@@ -452,7 +455,7 @@ export function OfficeShell() {
               onHydrate={hydratePrimaryConversation}
               onNotice={showNotice}
             />
-          </> : active === "coding" ? <PiCodingWorkbench workspaceId={selectedProjectId} onNotice={showNotice} /> : active === "agent-governance" ? <PiGovernanceConsole onNotice={showNotice} /> : active === "agent-operations" ? <PiOperationsConsole /> : active === "today" ? <TodayView
+          </> : active === "coding" ? <PiCodingWorkbench workspaceId={selectedProjectId} onNotice={showNotice} /> : active === "agent-development" ? <AgentDevelopmentWorkflow onNotice={showNotice} /> : active === "agent-governance" ? <PiGovernanceConsole onNotice={showNotice} /> : active === "agent-operations" ? <PiOperationsConsole /> : active === "today" ? <TodayView
             bootstrap={bootstrap}
             bootstrapLoading={bootstrapLoading}
             bootstrapError={bootstrapError}
@@ -477,7 +480,7 @@ export function OfficeShell() {
         </section>
       </main>
 
-      {active !== "command" && active !== "coding" ? <aside className={`agent-panel ${agentOpen ? "agent-panel-open" : ""}`}>
+      {active !== "command" && active !== "coding" && active !== "agent-development" ? <aside className={`agent-panel ${agentOpen ? "agent-panel-open" : ""}`}>
         <div className="agent-head"><div className="agent-title"><span><Sparkles size={16} /></span><div><strong>企业 Agent</strong><small><i /> 权限随请求实时重算</small></div></div><button className="icon-button" aria-label="收起 AI 助手" onClick={() => setAgentPreference(false)}><X size={18} /></button></div>
         <div className="context-strip"><Network size={14} /><span>{selectedProject ? `当前上下文：${selectedProject.code} · ${selectedProject.name}` : "当前没有选择项目上下文"}</span><ShieldCheck size={13} /></div>
         <div className="conversation" aria-live="polite">

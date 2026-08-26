@@ -14,6 +14,8 @@ import { registerTaskCommandTools } from "@/src/modules/task-command/application
 import { TaskCommandService } from "@/src/modules/task-command/application/service";
 import { DEMO_DELIVERY_OWNER_ID, DEMO_PRODUCT_OWNER_ID, InMemoryTaskCommandRepository } from "@/src/modules/task-command/infrastructure/in-memory-repository";
 import { createDevelopmentRequestContext } from "@/src/platform/context/development-context";
+import { AgentMemoryService } from "@/src/modules/agent-memory/application/service";
+import { InMemoryAgentMemoryRepository } from "@/src/modules/agent-memory/infrastructure/in-memory-repository";
 
 class ScriptedModel implements ModelGateway {
   readonly requests: ModelRequest[] = [];
@@ -161,5 +163,71 @@ describe("LLM-native Skill and Tool routing", () => {
       .createRun(context, { message: "请登记这一项风险" });
     expect(model.requests[0].tools?.some(({ name }) => name === modelToolName("management.create_risk"))).toBe(false);
     expect(run.output?.routing?.tools).toEqual([]);
+  });
+
+  it("binds an omitted conversation id to the primary conversation and captures casual content", async () => {
+    const context = createDevelopmentRequestContext("native-casual-memory-route");
+    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(), new InMemoryEventStore());
+    const tasks = new TaskCommandService(new InMemoryTaskCommandRepository());
+    const memory = new AgentMemoryService(new InMemoryAgentMemoryRepository());
+    const conversation = (await tasks.workspace(context)).conversation;
+    const model = new ScriptedModel([{ content: JSON.stringify({ answer: "可以先休息一下，工作事项等你准备好再处理。" }) }]);
+    const orchestrator = new AgentOrchestrator(
+      new InMemoryAgentStore(), new ManagementContextProvider(management, tasks, memory), model,
+      new ToolRegistry(), createDefaultSkillRegistry(), tasks, memory,
+    );
+    const run = await orchestrator.createRun(context, {
+      message: "我今天有点累，先聊两句。",
+      clientRequestId: "native-casual-memory-route-001",
+    });
+    expect(run.conversationId).toBe(conversation.id);
+    const workspace = await tasks.workspace(context);
+    expect(workspace.messages.map(({ role }) => role)).toEqual(["user", "assistant"]);
+    const remembered = await memory.context(context, {
+      conversationId: conversation.id, projectId: "30000000-0000-4000-8000-000000000001",
+      query: "我今天有点累", limit: 4,
+    });
+    expect(remembered.entries[0]?.tier).toBe("conversation");
+    expect(remembered.summary).toContain("我今天有点累");
+  });
+
+  it("keeps the ReAct observation loop intact across a read tool and a final answer", async () => {
+    const context = createDevelopmentRequestContext("native-react-loop");
+    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(), new InMemoryEventStore());
+    const tasks = new TaskCommandService(new InMemoryTaskCommandRepository());
+    const conversation = (await tasks.workspace(context)).conversation;
+    const task = (await tasks.publishMission(context, {
+      conversationId: conversation.id,
+      title: "ReAct 交接核验",
+      objective: "验证只读工具观察结果会回到模型再生成回答。",
+      priority: "medium",
+      dueAt: "2030-08-20T10:00:00.000Z",
+      packages: [{
+        title: "核验交接链",
+        description: "读取当前任务交接链。",
+        acceptanceCriteria: "返回可核验的交接链结果。",
+        requiredSkills: ["交付"], assignmentMode: "direct", assigneeId: DEMO_PRODUCT_OWNER_ID,
+        priority: "medium", dueAt: "2030-08-19T10:00:00.000Z", capacityPoints: 1,
+      }],
+    })).packages[0];
+    const tools = new ToolRegistry();
+    registerTaskCommandTools(tools, tasks);
+    const model = new ScriptedModel([
+      { content: "", toolCalls: [{ id: "call-react-read-1", name: modelToolName("work.get_task_handoff_trail"), arguments: { taskId: task.id } }] },
+      { content: JSON.stringify({ answer: "已读取交接链，当前没有历史交接记录。" }) },
+    ]);
+    const store = new InMemoryAgentStore();
+    const run = await new AgentOrchestrator(
+      store, new ManagementContextProvider(management, tasks), model, tools,
+      createDefaultSkillRegistry(), tasks,
+    ).createRun(context, {
+      message: "读取这个任务的交接链并告诉我结果。",
+      conversationId: conversation.id,
+      clientRequestId: "native-react-loop-001",
+    });
+    expect(model.requests).toHaveLength(2);
+    expect(model.requests[1].messages.at(-1)).toMatchObject({ role: "tool", toolCallId: "call-react-read-1" });
+    expect(run.output).toMatchObject({ kind: "execution", routing: { tools: ["work.get_task_handoff_trail"] } });
+    expect([...store.toolCalls.values()][0]).toMatchObject({ toolId: "work.get_task_handoff_trail", status: "succeeded" });
   });
 });

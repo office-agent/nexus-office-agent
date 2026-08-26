@@ -31,6 +31,7 @@
 | [17 管理智能中枢](./17-management-intelligence-web-wecom.md) | 管理节奏、指标语义、组合情景、企业事项、AI 治理和企业微信动作如何共享事实与权限 |
 | [18 工作指挥中枢](./18-work-command-center.md) | 主对话、LLM 原生 Skill/Tool 路由、任务拆包/分派/承接与实时个人任务如何形成闭环 |
 | [20 企业微信 AI 权限控制接口](./20-wecom-ai-access-control.md) | AI 能控制哪些企业微信能力、哪些必须走管理后台或独立凭据，以及如何强制确认和审计 |
+| [24 Agent 开发工作流](./24-agent-development-workflow.md) | 需求交接、project-to-act 留档、主要版本 diff、功能测试与交付清单如何形成失败关闭门禁 |
 | [公开功能清单](./FEATURE_CATALOG.md) | 当前公开源码包含的能力、状态和未完成外部 Gate |
 | [开源交接手册](./OPEN_SOURCE_HANDOFF.md) | 新维护者如何安装、验证、理解边界并安全接手 |
 

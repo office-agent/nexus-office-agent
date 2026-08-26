@@ -60,6 +60,12 @@ function updateTemplateMissingFields(current: WorkTemplateField[], input: Update
 export class TaskCommandService {
   constructor(private readonly repository: TaskCommandRepository) {}
 
+  /** Resolve the user's primary conversation without loading the full workspace. */
+  async primaryConversation(context: RequestContext) {
+    requirePermission(context, "work_task:read");
+    return this.repository.getOrCreatePrimaryConversation(context.tenantId, context.actorId);
+  }
+
   async workspace(context: RequestContext) {
     requirePermission(context, "work_task:read");
     const conversation = await this.repository.getOrCreatePrimaryConversation(context.tenantId, context.actorId);

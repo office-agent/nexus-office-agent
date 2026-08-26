@@ -41,6 +41,7 @@
 | M32 隔离预生产运行 Gate | 进行中（本地预生产控制面已实现；G-036 未通过） | Codex + 企业管理员/运维 | 已实现发布候选/制品摘要、Readiness 快照、Secret Lease 元数据、预生产事件、租户 RLS、Fail-Closed 探针、发布/回退和运营摘要；真实 OIDC、PostgreSQL 角色 RLS、Queue、Forgejo、对象存储、OCI/OpenBao、微 VM、MCP、模型/OTel 全链路和 `/ready=200` 仍待 G-036 | E-061；待 G-036 | 2026-08-20 |
 | M33 企业试点 | 进行中（Pilot 本地控制面已实现；真实 Gate 未开始） | 用户 + Codex + 试点团队 | 已实现本地 Pilot/成员/六类 journey/观察/抽检/事故/退出和 fail-closed readiness；真实项目完成新增功能、修 Bug、重构、测试失败修复、审查和 PR 六类旅程，连续运行并形成质量/成本/安全/采纳证据仍待 | E-062；待 G-037 | 2026-08-20 |
 | M34 1.0 发布与持续治理 | 进行中（Release Governance 本地控制面已实现；真实 Gate 未开始） | 用户 + 发布委员会 | 已实现本地发布候选、Gate Attestation、风险、双人签字、灰度/回退/撤销、upstream/API 兼容和持续评测；真实所有 P0 Gate、灾备/回滚/事故演练、未决高危清零、发布签字和生产灰度仍待 | E-063；待 G-038 | 2026-08-20 |
+| M35 Agent 开发团队工作流 | 完成（本地工程范围） | 技术负责人 + 交付负责人 | 已实现需求五文档自动归档、阶段门禁、主要版本 Diff/功能留档、逐版本功能测试、交付清单、Skill 建议（含测试阶段只读 AgentOps 健康检查）和桌面/移动工作台 | E-100、E-101、G-039 本地 Gate 通过 | 2026-08-26 |
 | VastMind 企业微信真实接入 | 进行中（服务器入口已部署；云侧与外部 Gate 待完成） | Codex + 企业管理员 | `office.vastmind.com.cn` 公网 HTTPS、后台自建应用/智能机器人配置、真实身份/消息/回复/卡片与故障旅程全部通过 | E-046（服务器入口）；待 E-035 | 2026-08-17 |
 
 ## Pi 企业平台详细实施路径
@@ -89,6 +90,8 @@
 
 ## 公开发布记录
 
+- E-101（2026-08-26）按用户补充要求在 M35 Agent 开发工作流的测试阶段新增 `agentops-awesome-list` 推荐，API、工作台与说明文档同步展示其适用时机和边界：按实际复杂度执行只读健康检查，发现架构缺口、功能风险与优化建议，不修改项目、不授予权限、不替代功能测试或交付 Gate。API 定向 1 项及全量 123 个测试文件/451 项通过，8 个文件/26 项按既有条件跳过；typecheck、零警告 Lint 和 Next 生产构建通过。本增量不改变 F-076 已通过的本地 Gate 范围，不生成新版本。
+- E-100（2026-08-26）完成 M35 Agent 开发团队工作流：新增服务端领域/应用/Presenter、InMemory/PostgreSQL Store、`0044_agent_development_workflow.sql` 及 down migration、四组 API、独立工作台和阶段 Skill 建议。需求交接原子生成五份 `project-to-act` 文档；版本强制保存 Git SHA、完整 Diff、摘要和功能清单；测试绑定具体版本；交付缺少任一版本 Diff/功能/通过测试时失败关闭，完成后冻结最新五文档与版本/测试摘要。全量 123 个测试文件/451 项通过，8 个文件/26 项按既有条件跳过；typecheck、零警告 Lint、Next 生产构建通过。宽屏与 390×844 浏览器完成需求→版本→失败测试不放行→通过复测→交付清单旅程，移动端无横向溢出，弹窗固定定位修复后完整可操作，控制台无错误/警告。证据只证明本地工程与 PGlite/PostgreSQL 适配合同，不替代真实 IdP、生产角色授权、生产 PostgreSQL、备份恢复或企业运行验收。
 - E-099（2026-08-20）已完成公开开源快照：初始化本地 `main` 仓库，按 `.gitignore` 排除 `.env*` 实例、构建输出、内部台账、企业环境部署文件和运行产物；新增脱敏 `docs/FEATURE_CATALOG.md`、`docs/OPEN_SOURCE_HANDOFF.md`、`CONTRIBUTING.md`、`SECURITY.md` 和 Apache-2.0 `LICENSE`，修正公开部署/连接器示例为占位值。`npm.cmd test -- --reporter=dot` 为 119 个文件通过、8 个文件跳过，441 项通过、26 项跳过；typecheck、Lint、Pi Runner bundle、隔离 Next production build 均退出 0。公开 commit `3fee719840976943e3eedae492585898093c768f` 已推送并由 `git ls-remote`、`gh repo view`、GitHub contents API 回读确认，仓库为 PUBLIC、许可证为 Apache-2.0、`origin/main` 一致。该证据只证明公开源码交付，不改变生产 Gate；后续代码继续以本机 `.project-to-act` 为唯一事实源。
 
 ## 下一步

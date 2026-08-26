@@ -47,6 +47,30 @@ describe("tiered Agent memory", () => {
     expect(outsideScope.entries.map(({ tier }) => tier)).not.toContain("situational");
   });
 
+  it("preserves bounded user and assistant content and keeps recent conversation turns visible", async () => {
+    const service = new AgentMemoryService(new InMemoryAgentMemoryRepository());
+    const context = createDevelopmentRequestContext("memory-conversation-content");
+    const conversationId = "70000000-0000-4000-8000-000000000002";
+    const captured = await service.captureConversation(context, {
+      conversationId,
+      runId: "72000000-0000-4000-8000-000000000005",
+      userMessage: "我今天有点累，先聊两句。",
+      assistantMessage: "那就先放松一下，团队协作可以稍后再处理。",
+      summary: "结果类型：answer。",
+    });
+    expect(captured?.summary).toContain("用户：我今天有点累");
+    expect(captured?.summary).toContain("助手：那就先放松一下");
+
+    const remembered = await service.context(context, {
+      conversationId,
+      projectId: "30000000-0000-4000-8000-000000000001",
+      query: "我刚才提到自己的什么状态",
+      limit: 4,
+    });
+    expect(remembered.entries[0]).toMatchObject({ tier: "conversation", scopeId: conversationId });
+    expect(remembered.summary).toContain("我今天有点累");
+  });
+
   it("requires a confirmation-capable Agent tool before an LLM can write long-term memory", async () => {
     const service = new AgentMemoryService(new InMemoryAgentMemoryRepository());
     const registry = new ToolRegistry();

@@ -73,17 +73,22 @@ export class AgentOrchestrator {
       const existing = await this.store.getRunByClientRequest(context.tenantId, context.actorId, input.clientRequestId);
       if (existing) return existing;
     }
+    const conversationId = input.conversationId ?? (
+      this.taskCommand && hasPermission(context, "work_task:read")
+        ? (await this.taskCommand.primaryConversation(context)).id
+        : undefined
+    );
     const inputClassification = classifyUntrustedText(input.message);
     const persistedMessage = inputClassification === "restricted" ? redactedSensitivePlaceholder() : input.message;
     let run = createAgentRun({
       tenantId: context.tenantId, actorId: context.actorId, sessionId: context.sessionId, channel: context.channel,
-      traceId: context.traceId, clientRequestId: input.clientRequestId, conversationId: input.conversationId,
+      traceId: context.traceId, clientRequestId: input.clientRequestId, conversationId,
       message: persistedMessage, contextRefs: input.contextRefs || [],
     });
     run = { ...run, agentProfile: "enterprise-primary-agent", profileVersion: 2, status: "running", startedAt: new Date().toISOString() };
     await this.store.saveRun(run);
-    if (input.conversationId && this.taskCommand) await this.taskCommand.appendMessage(context, {
-      conversationId: input.conversationId, role: "user", content: persistedMessage, runId: run.id, route: { skills: [], tools: [] }, citations: [],
+    if (conversationId && this.taskCommand) await this.taskCommand.appendMessage(context, {
+      conversationId, role: "user", content: persistedMessage, runId: run.id, route: { skills: [], tools: [] }, citations: [],
     });
 
     if (inputClassification === "restricted") {
@@ -105,7 +110,7 @@ export class AgentOrchestrator {
     }
 
     try {
-      const contextPackage = await this.contexts.build(context, run.contextRefs, { conversationId: input.conversationId, message: input.message, runId: run.id });
+      const contextPackage = await this.contexts.build(context, run.contextRefs, { conversationId, message: input.message, runId: run.id });
       await this.store.saveCitations(context.tenantId, run.id, contextPackage.citations);
       const availableTools = this.tools.available(context);
       const skillCatalog = this.skills.availableForTools(availableTools.map((tool) => tool.id));
@@ -142,7 +147,7 @@ export class AgentOrchestrator {
           if (callCount > MAX_TOOL_CALLS) throw new Error("AGENT_TOOL_LOOP_LIMIT");
           messages.push({ role: "assistant", content: response.content, toolCalls: response.toolCalls });
           for (const call of response.toolCalls) {
-            const outcome = await this.handleToolCall(context, run, contextPackage.expectedVersions, call, input.conversationId);
+            const outcome = await this.handleToolCall(context, run, contextPackage.expectedVersions, call, conversationId);
             usedTools.push(outcome.tool.id); usedSkills.add(outcome.tool.skillId);
             if (outcome.proposal) {
               run = {
@@ -241,7 +246,9 @@ export class AgentOrchestrator {
     if (run.conversationId && run.output && this.memory && run.output.kind !== "refusal") {
       await this.memory.captureConversation(context, {
         conversationId: run.conversationId, runId: run.id,
-        summary: `本轮结果：${run.output.kind}；实际 Skill：${run.output.routing?.skills.join("、") || "无"}；实际 Tool：${run.output.routing?.tools.join("、") || "无"}；引用：${run.output.citations.length} 项。`,
+        userMessage: run.message,
+        assistantMessage: run.output.content,
+        summary: `结果类型：${run.output.kind}；实际 Skill：${run.output.routing?.skills.join("、") || "无"}；实际 Tool：${run.output.routing?.tools.join("、") || "无"}；引用：${run.output.citations.length} 项。`,
       });
     }
   }

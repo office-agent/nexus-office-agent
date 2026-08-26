@@ -18,6 +18,15 @@ export function applicationErrorResponse(error: unknown): NextResponse {
   }
 
   const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
+  if (code === "ACCESS_DENIED") {
+    return NextResponse.json({ error: { code, message: "当前身份无权访问 Agent 开发工作流。" } }, { status: 403 });
+  }
+  if (code === "AGENT_DEVELOPMENT_PROJECT_NOT_FOUND") {
+    return NextResponse.json({ error: { code, message: "Agent 开发项目不存在或不属于当前租户。" } }, { status: 404 });
+  }
+  if (["AGENT_DEVELOPMENT_ARCHIVE_INCOMPLETE", "AGENT_DEVELOPMENT_REQUIREMENT_ARCHIVE_REQUIRED", "AGENT_DEVELOPMENT_VERSION_REQUIRED", "AGENT_DEVELOPMENT_VERSION_EVIDENCE_REQUIRED", "AGENT_DEVELOPMENT_TEST_GATE_REQUIRED", "AGENT_DEVELOPMENT_ALREADY_DELIVERED", "AGENT_DEVELOPMENT_VERSION_NAME_CONFLICT", "AGENT_DEVELOPMENT_VERSION_NOT_FOUND", "AGENT_DEVELOPMENT_VERSION_CONFLICT", "AGENT_DEVELOPMENT_IDEMPOTENCY_CONFLICT"].includes(code)) {
+    return NextResponse.json({ error: { code, message: "上一阶段尚未完成留档，当前操作已被工作流门禁阻止。" } }, { status: 409 });
+  }
   if (code.startsWith("POLICY_DENIED:")) {
     return NextResponse.json({ error: { code: "ACCESS_DENIED", message: "当前身份无权执行此操作。" } }, { status: 403 });
   }
