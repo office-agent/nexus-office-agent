@@ -76,6 +76,16 @@ export class InMemoryTaskCommandRepository implements TaskCommandRepository {
     return { mission: structuredClone(mission), packages: structuredClone(packages), created: true };
   }
 
+  async updateTaskTemplate(input: { currentMission: WorkMission; nextMission: WorkMission; currentPackage: WorkPackage; nextPackage: WorkPackage; expectedVersion: number; event: Omit<WorkTaskEvent, "sequence"> }) {
+    const missionIndex = this.missions.findIndex((item) => item.tenantId === input.currentMission.tenantId && item.id === input.currentMission.id && item.version === input.currentMission.version && item.isTemplate);
+    const packageIndex = this.packages.findIndex((item) => item.tenantId === input.currentPackage.tenantId && item.id === input.currentPackage.id && item.version === input.expectedVersion && item.isTemplate);
+    if (missionIndex < 0 || packageIndex < 0) return false;
+    this.missions[missionIndex] = structuredClone(input.nextMission);
+    this.packages[packageIndex] = structuredClone(input.nextPackage);
+    this.events.push({ ...structuredClone(input.event), sequence: ++this.sequence });
+    return true;
+  }
+
   async claimPackage(input: { current: WorkPackage; next: WorkPackage; event: Omit<WorkTaskEvent, "sequence">; expectedVersion: number }) {
     return this.updatePackage(input.current, input.next, input.expectedVersion, input.event);
   }

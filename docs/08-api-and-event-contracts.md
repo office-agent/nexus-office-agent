@@ -53,7 +53,8 @@ type RequestContext = {
 /agent/runs /agent/proposals /confirmations
 /integrations /integrations/:id/sync /integrations/:id/health
 /notifications /inbox
-/task-command/workspace /task-command/missions /task-command/message-pools/messages
+/task-command/workspace /task-command/missions /task-command/templates /task-command/message-pools/messages
+/task-command/templates/:id
 /task-command/packages/:id/claim /task-command/packages/:id/transition /task-command/packages/:id/handoffs
 /task-command/handoffs/:id/response
 /task-command/events

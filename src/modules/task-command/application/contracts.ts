@@ -10,6 +10,7 @@ export interface TaskCommandRepository {
   listPackages(tenantId: string): Promise<WorkPackage[]>;
   getPackage(tenantId: string, id: string): Promise<WorkPackage | null>;
   publishMission(mission: WorkMission, packages: WorkPackage[], events: Omit<WorkTaskEvent, "sequence">[]): Promise<{ mission: WorkMission; packages: WorkPackage[]; created: boolean }>;
+  updateTaskTemplate(input: { currentMission: WorkMission; nextMission: WorkMission; currentPackage: WorkPackage; nextPackage: WorkPackage; expectedVersion: number; event: Omit<WorkTaskEvent, "sequence"> }): Promise<boolean>;
   claimPackage(input: { current: WorkPackage; next: WorkPackage; event: Omit<WorkTaskEvent, "sequence">; expectedVersion: number }): Promise<boolean>;
   transitionPackage(input: { current: WorkPackage; next: WorkPackage; event: Omit<WorkTaskEvent, "sequence">; expectedVersion: number }): Promise<boolean>;
   listEvents(tenantId: string, actorId: string, after: number, limit: number): Promise<WorkTaskEvent[]>;

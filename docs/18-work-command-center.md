@@ -8,7 +8,7 @@
 首页不再是卡片式仪表盘，也不把 Agent 放在可有可无的侧边抽屉中。工作指挥中枢有三类互不混淆的对象：
 
 1. 主工作对话：企业成员用自然语言描述目标、约束、时限和参与人。对话跨页面持久存在，所有 Agent 入口写入同一条主会话。
-2. 正式任务发布栏：同屏显示“我的任务、待承接、我发布、待交接”。任务是执行承诺，必须具备接收对象、产出、验收、时限、能力和容量；模型发起的发布或交接一律先经人工确认。
+2. 正式任务发布栏：同屏显示“我的任务、待承接、我发布、待交接”。任务是执行承诺，必须具备接收对象、产出、验收、时限、能力和容量；模型发起的发布或交接一律先经人工确认。信息尚不完整但用户明确要求“创建/先建/记录”时，先保存为当前用户可见的任务模板，缺失字段可后补，不进入待承接池、不触发正式分派。
 3. 消息池：全公司或部门内的沟通、同步、征询和反馈。消息不产生负责人、截止时间、验收标准、任务状态或任务确认；仅按当前身份可见范围显示，并可以在原消息下反馈。
 
 管理看板、经营中枢、项目、审批、组织和知识模块仍是正式业务控制面；主对话负责理解、连接和调度，不另造一套业务事实。
@@ -30,7 +30,7 @@ flowchart LR
     R --> C
 ```
 
-每个任务包必须具备：明确产出、验收标准、所需能力、负责人策略、优先级、截止时间和容量点。正式任务只可定向至已验证的个人，或定向至已验证的部门后由该部门成员承接；不能由模型猜测用户或部门 ID。任务发布要求 `work_task:create`，个人定向追加 `work_task:assign`，部门定向追加 `work_task:assign_department` 和数据范围校验；承接时再次校验当前成员或组织范围。任务状态为：
+每个正式任务包必须具备：明确产出、验收标准、所需能力、负责人策略、优先级、截止时间和容量点。信息不完整的创建请求先生成模板，服务端记录 `missingFields`、版本和私有可见范围；补充时按模板 ID + `expectedVersion` 做 CAS 更新，仍保持模板状态，直到用户明确要求正式发布。正式任务只可定向至已验证的个人，或定向至已验证的部门后由该部门成员承接；不能由模型猜测用户或部门 ID。任务发布要求 `work_task:create`，个人定向追加 `work_task:assign`，部门定向追加 `work_task:assign_department` 和数据范围校验；承接时再次校验当前成员或组织范围。任务状态为：
 
 `published → claimed → in_progress → in_review → completed`
 
@@ -69,6 +69,8 @@ flowchart LR
 
 首批任务 Tool：
 
+- `work.create_task_template`：用已有信息创建当前用户可见的可编辑模板；缺失字段可后补，不正式分派。
+- `work.update_task_template`：按模板 ID 和版本补充或修改字段；不会隐式转为正式任务。
 - `work.publish_task_bundle`：一次发布一个使命及多个任务包；R2、幂等写入。
 - `work.claim_task_package`：以当前任务版本主动承接；R1、compare-and-set。
 - `work.update_my_task`：推进本人负责或发布的任务；R2、完成/阻塞证据门禁。
@@ -87,8 +89,8 @@ flowchart LR
 
 - `work_conversations`：每位成员最多一个活动主会话。
 - `work_conversation_messages`：用户、Agent 与 Tool 消息；按 run/role 幂等。
-- `work_missions`：对目标的发布记录；Agent run 维度幂等。
-- `work_packages`：可分派、承接和验收的最小执行单元。
+- `work_missions`：对目标的发布记录；Agent run 维度幂等；模板由 `is_template` 与 `missing_fields` 标记。
+- `work_packages`：可分派、承接和验收的最小执行单元；模板包在正式发布前仅对创建者可见。
 - `work_task_events`：单调递增 sequence 的任务事件账本。
 - `work_pool_messages`：公司或部门池中的轻量沟通内容。
 - `work_pool_feedback`：消息下的沟通反馈，不与任务证据混用。
@@ -105,6 +107,8 @@ flowchart LR
 | 方法 | 路径 | 作用 |
 |---|---|---|
 | `GET` | `/api/v1/task-command/workspace` | 读取主会话、消息、人员容量、我的/待承接/我发布任务 |
+| `POST` | `/api/v1/task-command/templates` | 创建当前用户可见的任务模板，缺失字段不阻断 |
+| `PATCH` | `/api/v1/task-command/templates/{id}` | 按 `expectedVersion` 修改模板字段，仍不正式分派 |
 | `POST` | `/api/v1/task-command/missions` | 人工发布一个使命与任务包集合 |
 | `POST` | `/api/v1/task-command/packages/{id}/claim` | 用 `expectedVersion` 主动承接 |
 | `POST` | `/api/v1/task-command/packages/{id}/transition` | 用 `expectedVersion` 推进状态、提交证据或阻塞原因 |

@@ -118,6 +118,9 @@ export function applicationErrorResponse(error: unknown): NextResponse {
   if (["WORK_PACKAGE_VERSION_CONFLICT", "WORK_PACKAGE_NOT_CLAIMABLE", "WORK_MISSION_CONFLICT"].includes(code)) {
     return NextResponse.json({ error: { code, message: "任务已被他人承接、版本已变化或当前状态不允许该操作。" } }, { status: 409 });
   }
+  if (code === "WORK_TEMPLATE_ONLY") {
+    return NextResponse.json({ error: { code, message: "只有任务模板可以在模板入口直接修改；正式任务请走正式状态变更流程。" } }, { status: 422 });
+  }
   if (["INTEGRATION_CONNECTION_NOT_ACTIVE", "TEST_NOTIFICATION_PROPOSAL_STATE_CONFLICT", "TEST_NOTIFICATION_PROPOSAL_CONFLICT"].includes(code)) {
     return NextResponse.json({ error: { code, message: "连接或确认对象的当前状态不允许该操作。" } }, { status: 409 });
   }

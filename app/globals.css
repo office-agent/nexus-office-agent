@@ -1387,6 +1387,8 @@ kbd { display: inline-flex; align-items: center; gap: 2px; padding: 3px 5px; col
 .is-unified-office-entry .task-handoff-action { width: 100%; min-height: 28px; margin-top: 8px; color: var(--ink-secondary); background: var(--paper-muted); border: 1px solid var(--rule-subtle); border-radius: 5px; cursor: pointer; font-size: 9px; font-weight: 700; }
 .is-unified-office-entry .task-handoff-action:hover { color: var(--ink); border-color: var(--rule); }
 .is-unified-office-entry .task-dispatch-card > footer { min-height: 30px; margin-top: 8px; padding-top: 7px; }
+.is-unified-office-entry .task-dispatch-card.is-template { border-left-color: var(--amber); background: color-mix(in oklch, var(--paper-raised), var(--amber-wash) 18%); }
+.is-unified-office-entry .task-template-missing { margin-top: 8px; padding: 6px 7px; color: color-mix(in oklch,var(--amber),var(--ink) 36%); background: var(--amber-wash); border-radius: 4px; font-size: 8px; line-height: 1.5; }
 .is-unified-office-entry .task-dispatch-card > footer:has(.task-handoff-reject) { justify-content: flex-start; }
 .is-unified-office-entry .task-dispatch-card .task-handoff-reject { color: var(--ink-tertiary); background: transparent; border-color: transparent; }
 .is-unified-office-entry .task-dispatch-card footer button { min-height: 29px; padding: 0 8px; font-size: 9px; }

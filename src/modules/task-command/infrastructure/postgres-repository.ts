@@ -19,6 +19,7 @@ const mapMission = (row: Row): WorkMission => ({
   id: text(row.id), tenantId: text(row.tenant_id), conversationId: text(row.conversation_id), projectId: optionalText(row.project_id), title: text(row.title), objective: text(row.objective),
   priority: row.priority as WorkMission["priority"], dueAt: text(row.due_at), status: row.status as WorkMission["status"], publishedBy: text(row.published_by),
   source: row.source as WorkMission["source"], sourceRunId: optionalText(row.source_run_id), version: Number(row.version), createdAt: text(row.created_at), updatedAt: text(row.updated_at),
+  isTemplate: Boolean(row.is_template), missingFields: json<WorkMission["missingFields"]>(row.missing_fields ?? []),
 });
 const mapPackage = (row: Row): WorkPackage => ({
   id: text(row.id), tenantId: text(row.tenant_id), missionId: text(row.mission_id), ordinal: Number(row.ordinal), title: text(row.title), description: text(row.description),
@@ -26,6 +27,7 @@ const mapPackage = (row: Row): WorkPackage => ({
   assigneeId: optionalText(row.assignee_id), targetOrgUnitId: optionalText(row.target_org_unit_id), publishedBy: text(row.published_by), priority: row.priority as WorkPackage["priority"], dueAt: text(row.due_at), capacityPoints: Number(row.capacity_points),
   status: row.status as WorkPackage["status"], evidenceRefs: json<string[]>(row.evidence_refs), blockedReason: optionalText(row.blocked_reason), claimedAt: optionalText(row.claimed_at),
   completedAt: optionalText(row.completed_at), version: Number(row.version), createdAt: text(row.created_at), updatedAt: text(row.updated_at),
+  isTemplate: Boolean(row.is_template), missingFields: json<WorkPackage["missingFields"]>(row.missing_fields ?? []),
 });
 const mapEvent = (row: Row): WorkTaskEvent => ({
   sequence: Number(row.sequence), id: text(row.id), tenantId: text(row.tenant_id), missionId: text(row.mission_id), packageId: optionalText(row.package_id),
@@ -112,9 +114,9 @@ export class PostgresTaskCommandRepository implements TaskCommandRepository {
 
   async publishMission(mission: WorkMission, packages: WorkPackage[], events: Omit<WorkTaskEvent, "sequence">[]) {
     return this.database.withTenant(mission.tenantId, async (db) => {
-      const inserted = await db.query(`INSERT INTO work_missions(id,tenant_id,conversation_id,project_id,title,objective,priority,due_at,status,published_by,source,source_run_id,version,created_at,updated_at)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT DO NOTHING RETURNING id`,
-        [mission.id,mission.tenantId,mission.conversationId,mission.projectId ?? null,mission.title,mission.objective,mission.priority,mission.dueAt,mission.status,mission.publishedBy,mission.source,mission.sourceRunId ?? null,mission.version,mission.createdAt,mission.updatedAt]);
+      const inserted = await db.query(`INSERT INTO work_missions(id,tenant_id,conversation_id,project_id,title,objective,priority,due_at,status,published_by,source,source_run_id,is_template,missing_fields,version,created_at,updated_at)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT DO NOTHING RETURNING id`,
+        [mission.id,mission.tenantId,mission.conversationId,mission.projectId ?? null,mission.title,mission.objective,mission.priority,mission.dueAt,mission.status,mission.publishedBy,mission.source,mission.sourceRunId ?? null,mission.isTemplate,mission.missingFields,mission.version,mission.createdAt,mission.updatedAt]);
       if (!inserted.length && mission.sourceRunId) {
         const existingRows = await db.query("SELECT * FROM work_missions WHERE tenant_id=$1 AND source_run_id=$2", [mission.tenantId,mission.sourceRunId]);
         if (existingRows[0]) {
@@ -127,6 +129,21 @@ export class PostgresTaskCommandRepository implements TaskCommandRepository {
       for (const item of packages) await this.insertPackage(db, item);
       for (const item of events) await this.insertEvent(db, item);
       return { mission, packages, created: true };
+    });
+  }
+
+  async updateTaskTemplate(input: { currentMission: WorkMission; nextMission: WorkMission; currentPackage: WorkPackage; nextPackage: WorkPackage; expectedVersion: number; event: Omit<WorkTaskEvent, "sequence"> }) {
+    return this.database.withTenant(input.currentMission.tenantId, async (db) => {
+      const missionRows = await db.query(`UPDATE work_missions SET title=$3,objective=$4,priority=$5,due_at=$6,is_template=$7,missing_fields=$8,version=$9,updated_at=$10
+        WHERE tenant_id=$1 AND id=$2 AND version=$11 AND is_template=true RETURNING id`,
+        [input.currentMission.tenantId,input.currentMission.id,input.nextMission.title,input.nextMission.objective,input.nextMission.priority,input.nextMission.dueAt,input.nextMission.isTemplate,input.nextMission.missingFields,input.nextMission.version,input.nextMission.updatedAt,input.currentMission.version]);
+      if (!missionRows.length) return false;
+      const packageRows = await db.query(`UPDATE work_packages SET title=$3,description=$4,acceptance_criteria=$5,required_skills=$6,assignment_mode=$7,assignee_id=$8,target_org_unit_id=$9,priority=$10,due_at=$11,capacity_points=$12,is_template=$13,missing_fields=$14,version=$15,updated_at=$16
+        WHERE tenant_id=$1 AND id=$2 AND version=$17 AND is_template=true RETURNING id`,
+        [input.currentPackage.tenantId,input.currentPackage.id,input.nextPackage.title,input.nextPackage.description,input.nextPackage.acceptanceCriteria,input.nextPackage.requiredSkills,input.nextPackage.assignmentMode,input.nextPackage.assigneeId ?? null,input.nextPackage.targetOrgUnitId ?? null,input.nextPackage.priority,input.nextPackage.dueAt,input.nextPackage.capacityPoints,input.nextPackage.isTemplate,input.nextPackage.missingFields,input.nextPackage.version,input.nextPackage.updatedAt,input.expectedVersion]);
+      if (!packageRows.length) throw new Error("WORK_PACKAGE_VERSION_CONFLICT");
+      await this.insertEvent(db, input.event);
+      return true;
     });
   }
 
@@ -288,9 +305,9 @@ export class PostgresTaskCommandRepository implements TaskCommandRepository {
   }
 
   private async insertPackage(db: DatabaseExecutor, value: WorkPackage) {
-    await db.query(`INSERT INTO work_packages(id,tenant_id,mission_id,ordinal,title,description,acceptance_criteria,required_skills,assignment_mode,assignee_id,target_org_unit_id,published_by,priority,due_at,capacity_points,status,evidence_refs,blocked_reason,claimed_at,completed_at,version,created_at,updated_at)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
-      [value.id,value.tenantId,value.missionId,value.ordinal,value.title,value.description,value.acceptanceCriteria,value.requiredSkills,value.assignmentMode,value.assigneeId ?? null,value.targetOrgUnitId ?? null,value.publishedBy,value.priority,value.dueAt,value.capacityPoints,value.status,value.evidenceRefs,value.blockedReason ?? null,value.claimedAt ?? null,value.completedAt ?? null,value.version,value.createdAt,value.updatedAt]);
+    await db.query(`INSERT INTO work_packages(id,tenant_id,mission_id,ordinal,title,description,acceptance_criteria,required_skills,assignment_mode,assignee_id,target_org_unit_id,published_by,priority,due_at,capacity_points,status,evidence_refs,blocked_reason,claimed_at,completed_at,is_template,missing_fields,version,created_at,updated_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
+      [value.id,value.tenantId,value.missionId,value.ordinal,value.title,value.description,value.acceptanceCriteria,value.requiredSkills,value.assignmentMode,value.assigneeId ?? null,value.targetOrgUnitId ?? null,value.publishedBy,value.priority,value.dueAt,value.capacityPoints,value.status,value.evidenceRefs,value.blockedReason ?? null,value.claimedAt ?? null,value.completedAt ?? null,value.isTemplate,value.missingFields,value.version,value.createdAt,value.updatedAt]);
   }
 
   private async insertEvent(db: DatabaseExecutor, value: Omit<WorkTaskEvent, "sequence">) {

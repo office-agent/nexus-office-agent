@@ -1,11 +1,29 @@
 import { z } from "zod";
-import { appendPoolFeedbackSchema, initiateTaskHandoffSchema, publishMissionSchema, publishPoolMessageSchema, respondToTaskHandoffSchema, taskHandoffTrailSchema, transitionPackageSchema } from "@/src/modules/task-command/application/schemas";
+import { appendPoolFeedbackSchema, createTaskTemplateSchema, initiateTaskHandoffSchema, publishMissionSchema, publishPoolMessageSchema, respondToTaskHandoffSchema, taskHandoffTrailSchema, transitionPackageSchema, updateTaskTemplateSchema } from "@/src/modules/task-command/application/schemas";
 import type { TaskCommandService } from "@/src/modules/task-command/application/service";
 import { ToolRegistry } from "@/src/modules/agent/domain/tool";
 
 const claimSchema = z.object({ taskId: z.uuid(), expectedVersion: z.number().int().positive() }).strict();
 const updateSchema = transitionPackageSchema.extend({ taskId: z.uuid() }).strict();
 const respondHandoffSchema = respondToTaskHandoffSchema.extend({ handoffId: z.uuid() }).strict();
+
+const createTemplateJsonSchema = {
+  type: "object", additionalProperties: false,
+  properties: {
+    conversationId: { type: "string", format: "uuid" }, title: { type: "string" }, objective: { type: "string" }, description: { type: "string" }, acceptanceCriteria: { type: "string" },
+    requiredSkills: { type: "array", items: { type: "string" } }, assignmentMode: { type: "string", enum: ["direct", "open_claim"] }, assigneeId: { type: "string", format: "uuid" }, targetOrgUnitId: { type: "string", format: "uuid" },
+    priority: { type: "string", enum: ["critical", "high", "medium", "low"] }, dueAt: { type: "string", format: "date-time" }, capacityPoints: { type: "integer", minimum: 1, maximum: 40 },
+  }, required: ["conversationId", "title"],
+} as const;
+
+const updateTemplateJsonSchema = {
+  type: "object", additionalProperties: false,
+  properties: {
+    taskId: { type: "string", format: "uuid" }, expectedVersion: { type: "integer", minimum: 1 }, title: { type: "string" }, objective: { type: "string" }, description: { type: "string" }, acceptanceCriteria: { type: "string" },
+    requiredSkills: { type: "array", items: { type: "string" } }, assignmentMode: { type: "string", enum: ["direct", "open_claim"] }, assigneeId: { type: ["string", "null"], format: "uuid" }, targetOrgUnitId: { type: ["string", "null"], format: "uuid" },
+    priority: { type: "string", enum: ["critical", "high", "medium", "low"] }, dueAt: { type: "string", format: "date-time" }, capacityPoints: { type: "integer", minimum: 1, maximum: 40 },
+  }, required: ["taskId", "expectedVersion"],
+} as const;
 
 const publishJsonSchema = {
   type: "object", additionalProperties: false,
@@ -21,6 +39,22 @@ const publishJsonSchema = {
 } as const;
 
 export function registerTaskCommandTools(registry: ToolRegistry, service: TaskCommandService) {
+  registry.register({
+    id: "work.create_task_template", skillId: "work-orchestration", version: 1,
+    description: "根据用户已经提供的最少信息创建一个局部任务模板；未提供的目标、说明、负责人或承接范围、截止时间、验收标准、优先级、容量点和技能会标记为待补充，不会分派给个人或部门，也不会进入可承接任务池。该 Tool 不替代正式发布门禁。",
+    requiredPermissions: ["work_task:create"], riskLevel: 1, confirmationPolicy: "never", sideEffect: "internal_idempotent", timeoutMs: 10_000, maxAttempts: 2,
+    allowedChannels: ["web", "feishu", "dingtalk", "wecom"], inputJsonSchema: createTemplateJsonSchema, inputSchema: createTaskTemplateSchema,
+    preview(input) { const value = createTaskTemplateSchema.parse(input); return `将创建任务模板“${value.title}”，缺失字段会在模板中标记，暂不对外分派。`; },
+    execute(context, input, execution) { return service.createTaskTemplate(context, createTaskTemplateSchema.parse(input), { source: "agent", sourceRunId: execution?.agentRunId }); },
+  });
+  registry.register({
+    id: "work.update_task_template", skillId: "work-orchestration", version: 1,
+    description: "补充或修改当前用户拥有的任务模板。只允许更新模板内容和分派草稿，不会把模板自动正式发送给个人或部门；每次更新都使用任务版本号，缺失字段会重新计算。",
+    requiredPermissions: ["work_task:update"], riskLevel: 1, confirmationPolicy: "never", sideEffect: "internal_idempotent", timeoutMs: 10_000, maxAttempts: 2,
+    allowedChannels: ["web", "feishu", "dingtalk", "wecom"], inputJsonSchema: updateTemplateJsonSchema, inputSchema: updateTaskTemplateSchema,
+    preview(input) { const value = updateTaskTemplateSchema.parse(input); return `将补充任务模板 ${value.taskId} 的内容，版本号为 ${value.expectedVersion}。`; },
+    execute(context, input) { return service.updateTaskTemplate(context, updateTaskTemplateSchema.parse(input)); },
+  });
   registry.register({
     id: "work.publish_task_bundle", skillId: "work-orchestration", version: 1,
     description: "正式发布一个工作使命并一次性创建多个可验收任务包；每包必须定向至已知成员，或定向至一个部门供该部门成员承接，二者不可同时填写：direct 只填 assigneeId，open_claim 只填 targetOrgUnitId。调用本 Tool 只生成待人工确认的提案，不会直接创建任务；用户明确要求正式发布且参数齐全时必须调用，不要改为纯文字预览。",

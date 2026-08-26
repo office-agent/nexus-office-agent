@@ -87,6 +87,26 @@ describe("LLM-native Skill and Tool routing", () => {
     expect(persisted.at(-1)?.route).toEqual({ skills: ["work-orchestration"], tools: ["work.publish_task_bundle"] });
   });
 
+  it("routes an incomplete create request to an editable task template without formal dispatch", async () => {
+    const context = createDevelopmentRequestContext("native-template-route");
+    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(), new InMemoryEventStore());
+    const tasks = new TaskCommandService(new InMemoryTaskCommandRepository());
+    const conversation = (await tasks.workspace(context)).conversation;
+    const tools = new ToolRegistry();
+    registerManagementTools(tools, management);
+    registerTaskCommandTools(tools, tasks);
+    const model = new ScriptedModel([
+      { content: "", toolCalls: [{ id: "call-template-1", name: modelToolName("work.create_task_template"), arguments: { conversationId: conversation.id, title: "API 申请工作" } }] },
+      { content: JSON.stringify({ answer: "已创建 API 申请工作模板，缺失内容可以后续补充。", skillsUsed: ["work-orchestration"] }) },
+    ]);
+    const orchestrator = new AgentOrchestrator(new InMemoryAgentStore(), new ManagementContextProvider(management, tasks), model, tools, createDefaultSkillRegistry(), tasks);
+    const run = await orchestrator.createRun(context, { message: "创建一个 API 申请工作", conversationId: conversation.id, clientRequestId: "native-template-route-001" });
+    expect(run).toMatchObject({ status: "succeeded", output: { kind: "execution", routing: { skills: ["work-orchestration"], tools: ["work.create_task_template"] } } });
+    expect((await tasks.workspace(context)).availableTasks).toEqual([]);
+    expect((await tasks.workspace(context)).templates).toMatchObject([{ title: "API 申请工作", isTemplate: true }]);
+    expect(model.requests[0].tools?.map(({ name }) => name)).toContain(modelToolName("work.create_task_template"));
+  });
+
   it("lets the model place a non-task communication into a visible message pool without a confirmation proposal", async () => {
     const context = createDevelopmentRequestContext("native-message-route");
     const management = new ManagementLoopService(new InMemoryManagementLoopRepository(), new InMemoryEventStore());
