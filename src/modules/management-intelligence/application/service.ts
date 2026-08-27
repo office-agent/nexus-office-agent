@@ -20,6 +20,7 @@ import {
   type ManagementBriefing,
   type ManagementCadence,
   type ManagementChannelAction,
+  type MetricQualityCheck,
   type MetricSemanticProfile,
   type PortfolioScenario,
 } from "@/src/modules/management-intelligence/domain/management-intelligence";
@@ -34,6 +35,31 @@ function requirePolicy(context: RequestContext, action: Action, type: string, id
 
 function unique(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function latestMetricQualityByMetric(checks: MetricQualityCheck[]): Map<string, MetricQualityCheck> {
+  const latest = new Map<string, MetricQualityCheck>();
+  for (const check of checks) {
+    const current = latest.get(check.metricId);
+    if (!current || check.checkedAt > current.checkedAt || (check.checkedAt === current.checkedAt && check.id > current.id)) latest.set(check.metricId, check);
+  }
+  return latest;
+}
+
+function abbreviated(values: string[], maximumItems: number, maximumCharacters: number): string {
+  const selected = values.slice(0, maximumItems).map((value) => value.slice(0, maximumCharacters));
+  return `${selected.join("；")}${values.length > maximumItems ? `；另有 ${values.length - maximumItems} 项` : ""}`;
+}
+
+function scenarioBriefingFact(scenario: PortfolioScenario): BriefingFact {
+  const projectScope = unique(scenario.projectDecisions.map(({ projectId }) => projectId));
+  const decisions = scenario.projectDecisions.slice(0, 3).map(({ projectId, action, capacityPercent, rationale }) =>
+    `${projectId}：${action}，容量 ${capacityPercent}%（${rationale.slice(0, 100)}）`,
+  );
+  return {
+    statement: `组合情景「${scenario.name}」当前为 ${scenario.status}。假设：${abbreviated(scenario.assumptions, 3, 120)}。适用范围：组合 ${scenario.portfolioId} 的项目 ${abbreviated(projectScope, 6, 80)}。项目动作：${decisions.join("；")}${scenario.projectDecisions.length > decisions.length ? `；另有 ${scenario.projectDecisions.length - decisions.length} 个项目动作` : ""}。预期收益 ${scenario.expectedBenefit}，成本 ${scenario.estimatedCost}，风险评分 ${scenario.riskScore}/25。`,
+    evidenceRefs: [`portfolio-scenario:${scenario.id}:v${scenario.version}`, ...scenario.evidenceRefs],
+  };
 }
 
 function safeModelBriefing(content: string, availableEvidence: Set<string>): { inferences: BriefingInference[]; proposals: ManagementBriefing["proposals"] } | null {
@@ -89,8 +115,8 @@ export class ManagementIntelligenceService {
   async workspace(context: RequestContext) {
     requirePolicy(context, "read", "management_intelligence", "workspace");
     const data = await this.repository.getData(context.tenantId);
-    const latestQuality = new Map<string, (typeof data.metricQualityChecks)[number]>();
-    for (const check of [...data.metricQualityChecks].sort((left, right) => left.checkedAt.localeCompare(right.checkedAt))) latestQuality.set(check.metricId, check);
+    const latestQuality = latestMetricQualityByMetric(data.metricQualityChecks);
+    const qualityStatus = (metricId: string) => latestQuality.get(metricId)?.status ?? "missing";
     const now = this.now().getTime();
     const openCases = data.cases.filter(({ status }) => !["closed", "cancelled"].includes(status));
     return {
@@ -106,7 +132,8 @@ export class ManagementIntelligenceService {
       exceptionSummary: {
         overdueCases: openCases.filter(({ dueAt }) => Date.parse(dueAt) < now).length,
         criticalCases: openCases.filter(({ severity }) => severity === "critical").length,
-        staleMetrics: [...latestQuality.values()].filter(({ status }) => status === "stale" || status === "missing").length,
+        staleMetrics: data.metricProfiles.filter((profile) => ["stale", "missing"].includes(qualityStatus(profile.metricId))).length,
+        unverifiedMetrics: data.metricProfiles.filter((profile) => qualityStatus(profile.metricId) === "unverified").length,
         unpreparedCadences: data.occurrences.filter((item) => {
           const scheduledStart = Date.parse(item.scheduledStartAt);
           return item.status === "scheduled" && scheduledStart >= now && scheduledStart - now < 24 * 60 * 60 * 1000;
@@ -147,15 +174,14 @@ export class ManagementIntelligenceService {
     const preparing = current.status === "preparing" ? current : transitionOccurrence(current, "preparing", [], this.now().toISOString());
     if (current.status === "scheduled" && !(await this.repository.saveOccurrence(preparing, current.version))) throw new Error("CADENCE_OCCURRENCE_VERSION_CONFLICT");
     const data = await this.repository.getData(context.tenantId);
-    const latestQuality = new Map<string, (typeof data.metricQualityChecks)[number]>();
-    for (const check of data.metricQualityChecks) latestQuality.set(check.metricId, check);
+    const latestQuality = latestMetricQualityByMetric(data.metricQualityChecks);
     const facts: BriefingFact[] = [
       ...data.cases.filter(({ status }) => !["closed", "cancelled"].includes(status)).slice(0, 12).map((item) => ({ statement: `事项 ${item.code}「${item.title}」当前为 ${item.status}，严重度 ${item.severity}。`, evidenceRefs: [`enterprise-case:${item.id}:v${item.version}`, item.sourceRef] })),
       ...data.metricProfiles.slice(0, 12).map((profile) => {
         const quality = latestQuality.get(profile.metricId);
         return { statement: `指标 ${profile.metricId} 的质量状态为 ${quality?.status ?? "missing"}，权威来源为 ${profile.authoritativeSource}。`, evidenceRefs: [`metric-profile:${profile.id}:v${profile.version}`, ...(quality?.evidenceRefs ?? [])] };
       }),
-      ...data.scenarios.filter(({ status }) => status === "recommended" || status === "selected").slice(0, 8).map((item) => ({ statement: `组合情景「${item.name}」当前为 ${item.status}，风险评分 ${item.riskScore}/25。`, evidenceRefs: [`portfolio-scenario:${item.id}:v${item.version}`, ...item.evidenceRefs] })),
+      ...data.scenarios.filter(({ status }) => status === "recommended" || status === "selected").slice(0, 8).map(scenarioBriefingFact),
     ];
     if (!facts.length) facts.push({ statement: "当前授权范围内没有打开事项、指标质量记录或推荐组合情景。", evidenceRefs: [`management-workspace:${data.generatedAt}`] });
     const availableEvidence = new Set(facts.flatMap(({ evidenceRefs }) => evidenceRefs));
@@ -244,6 +270,7 @@ export class ManagementIntelligenceService {
   async createScenario(context: RequestContext, portfolioId: string, input: Omit<PortfolioScenario, "id" | "tenantId" | "portfolioId" | "createdBy" | "version" | "createdAt" | "updatedAt" | "selectedBy" | "selectedAt">) {
     requirePolicy(context, "create", "portfolio_scenario", "new");
     if (!(await this.repository.portfolioExists(context.tenantId, portfolioId))) throw new Error("PORTFOLIO_NOT_FOUND");
+    if (!(await this.repository.portfolioContainsProjects(context.tenantId, portfolioId, input.projectDecisions.map(({ projectId }) => projectId)))) throw new Error("PORTFOLIO_SCENARIO_SCOPE_INVALID");
     const now = this.now().toISOString();
     const scenario: PortfolioScenario = { ...input, id: randomUUID(), tenantId: context.tenantId, portfolioId, assumptions: unique(input.assumptions), evidenceRefs: unique(input.evidenceRefs), createdBy: context.actorId, version: 1, createdAt: now, updatedAt: now };
     await this.repository.saveScenario(scenario);

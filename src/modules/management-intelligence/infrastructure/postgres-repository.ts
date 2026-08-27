@@ -133,6 +133,14 @@ export class PostgresManagementIntelligenceRepository implements ManagementIntel
   }
 
   async portfolioExists(tenantId: string, portfolioId: string) { return this.exists(tenantId, "SELECT id FROM portfolios WHERE tenant_id=$1 AND id=$2", portfolioId); }
+  async portfolioContainsProjects(tenantId: string, portfolioId: string, projectIds: string[]) {
+    const uniqueProjectIds = [...new Set(projectIds)];
+    if (uniqueProjectIds.length === 0) return false;
+    return this.database.withTenant(tenantId, async (db) => {
+      const rows = await db.query<{ project_id: string }>("SELECT DISTINCT project_id FROM portfolio_projects WHERE tenant_id=$1 AND portfolio_id=$2 AND project_id = ANY($3::uuid[])", [tenantId, portfolioId, uniqueProjectIds]);
+      return new Set(rows.map(({ project_id }) => String(project_id))).size === uniqueProjectIds.length;
+    });
+  }
   async saveScenario(value: PortfolioScenario) {
     await this.database.withTenant(value.tenantId, (db) => db.query(
       `INSERT INTO portfolio_scenarios(id,tenant_id,portfolio_id,name,assumptions,project_decisions,expected_benefit,estimated_cost,risk_score,evidence_refs,status,created_by,selected_by,selected_at,version,created_at,updated_at)

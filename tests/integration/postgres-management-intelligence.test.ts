@@ -14,6 +14,7 @@ import { createDevelopmentRequestContext, DEMO_MANAGER_ID, DEMO_PROJECT_ID, DEMO
 const METRIC_ID = "92000000-0000-4000-8000-000000000001";
 const PORTFOLIO_ID = "93000000-0000-4000-8000-000000000001";
 const CONNECTION_ID = "a5000000-0000-4000-8000-000000000001";
+const OUT_OF_SCOPE_PROJECT_ID = "30000000-0000-4000-8000-000000000099";
 
 describe("Postgres management intelligence repository", () => {
   let database: PGlite;
@@ -32,6 +33,7 @@ describe("Postgres management intelligence repository", () => {
     await database.query("SELECT set_config('app.tenant_id',$1,false)", [DEMO_TENANT_ID]);
     await database.query("INSERT INTO users(id,tenant_id,display_name,email,status) VALUES($1,$2,'Manager','manager@example.test','active')", [DEMO_MANAGER_ID,DEMO_TENANT_ID]);
     await database.query("INSERT INTO projects(id,tenant_id,code,name,owner_id,status,priority,starts_at,target_end_at,health,business_value,acceptance_criteria,resource_plan) VALUES($1,$2,'P-1','Release',$3,'active','high','2026-08-01','2026-09-01','watch','Protect release quality','Signed acceptance and regression evidence',$4)", [DEMO_PROJECT_ID,DEMO_TENANT_ID,DEMO_MANAGER_ID,{ owner: DEMO_MANAGER_ID }]);
+    await database.query("INSERT INTO projects(id,tenant_id,code,name,owner_id,status,priority,starts_at,target_end_at,health,business_value,acceptance_criteria,resource_plan) VALUES($1,$2,'P-2','Out of scope',$3,'active','medium','2026-08-01','2026-09-01','healthy','Keep scope validation honest','Never persist an unrelated portfolio decision',$4)", [OUT_OF_SCOPE_PROJECT_ID,DEMO_TENANT_ID,DEMO_MANAGER_ID,{ owner: DEMO_MANAGER_ID }]);
     await database.query("INSERT INTO metric_definitions(id,tenant_id,code,name,description,owner_id,unit,direction,baseline,target_value,source_system,source_locator,refresh_cadence,classification) VALUES($1,$2,'DELIVERY','Delivery','Acceptance',$3,'%','increase',80,95,'ledger','acceptance','weekly','internal')", [METRIC_ID,DEMO_TENANT_ID,DEMO_MANAGER_ID]);
     await database.query("INSERT INTO portfolios(id,tenant_id,code,name,owner_id,status,investment_thesis) VALUES($1,$2,'PF-1','Delivery portfolio',$3,'active','Protect critical delivery')", [PORTFOLIO_ID,DEMO_TENANT_ID,DEMO_MANAGER_ID]);
     await database.query("INSERT INTO portfolio_projects(tenant_id,portfolio_id,project_id) VALUES($1,$2,$3)", [DEMO_TENANT_ID,PORTFOLIO_ID,DEMO_PROJECT_ID]);
@@ -66,5 +68,48 @@ describe("Postgres management intelligence repository", () => {
     const scenarios = (await repository.getData(DEMO_TENANT_ID)).scenarios;
     expect(scenarios.filter(({ status }) => status === "selected")).toEqual([expect.objectContaining({ id: second.id })]);
     expect(scenarios.find(({ id }) => id === first.id)).toMatchObject({ status: "superseded", version: 3 });
+  });
+
+  it("makes missing, unverified, and stale metrics visible in the workspace and cadence briefing", async () => {
+    const context = createDevelopmentRequestContext("postgres-quality-order");
+    const cadence = await service.createCadence(context, { name: "Quality review", cadenceType: "weekly_operations", frequency: "weekly", timezone: "Asia/Shanghai", ownerId: DEMO_MANAGER_ID, participantRoleIds: ["pmo"], agendaTemplate: ["quality"], evidenceRequirements: ["quality evidence"], nextOccurrenceAt: "2026-08-08T01:00:00.000Z" });
+    const missingOccurrence = await service.createOccurrence(context, cadence.id, { scheduledStartAt: "2026-08-08T01:00:00.000Z", scheduledEndAt: "2026-08-08T02:00:00.000Z" });
+    const unverifiedOccurrence = await service.createOccurrence(context, cadence.id, { scheduledStartAt: "2026-08-15T01:00:00.000Z", scheduledEndAt: "2026-08-15T02:00:00.000Z" });
+    const staleOccurrence = await service.createOccurrence(context, cadence.id, { scheduledStartAt: "2026-08-22T01:00:00.000Z", scheduledEndAt: "2026-08-22T02:00:00.000Z" });
+    await service.upsertMetricProfile(context, METRIC_ID, { businessDefinition: "Accepted projects delivered on time", formula: "accepted_on_time / accepted_total", ownerId: DEMO_MANAGER_ID, stewardId: DEMO_MANAGER_ID, authoritativeSource: "Acceptance ledger", sourceLocator: "acceptance.completed_at", refreshCadence: "weekly", freshnessSlaMinutes: 60, dimensions: ["region"], allowedUses: ["operating review"], prohibitedUses: ["employment decision"] });
+
+    const withoutCheck = await service.workspace(context);
+    expect(withoutCheck.metricProfiles[0]?.latestQuality).toBeUndefined();
+    expect(withoutCheck.exceptionSummary).toMatchObject({ staleMetrics: 1, unverifiedMetrics: 0 });
+    const missingBriefing = await service.prepareOccurrence(context, missingOccurrence.id);
+    expect(missingBriefing.briefing?.facts.find(({ statement }) => statement.includes(`指标 ${METRIC_ID}`))?.statement).toContain("missing");
+
+    await repository.saveMetricQualityCheck({ id: "b1000000-0000-4000-8000-000000000001", tenantId: DEMO_TENANT_ID, metricId: METRIC_ID, status: "healthy", observedAt: "2026-08-04T00:00:00.000Z", freshnessMinutes: 30, completenessPercent: 100, evidenceRefs: ["quality:old-healthy"], checkedBy: DEMO_MANAGER_ID, checkedAt: "2026-08-04T01:00:00.000Z" });
+    await repository.saveMetricQualityCheck({ id: "b1000000-0000-4000-8000-000000000002", tenantId: DEMO_TENANT_ID, metricId: METRIC_ID, status: "unverified", observedAt: "2026-08-05T02:00:00.000Z", completenessPercent: 92, evidenceRefs: ["quality:unverified"], checkedBy: DEMO_MANAGER_ID, checkedAt: "2026-08-05T00:00:00.000Z" });
+
+    const unverifiedWorkspace = await service.workspace(context);
+    expect(unverifiedWorkspace.metricProfiles[0]?.latestQuality).toMatchObject({ status: "unverified", evidenceRefs: ["quality:unverified"] });
+    expect(unverifiedWorkspace.exceptionSummary).toMatchObject({ staleMetrics: 0, unverifiedMetrics: 1 });
+    const unverifiedBriefing = await service.prepareOccurrence(context, unverifiedOccurrence.id);
+    expect(unverifiedBriefing.briefing?.facts.find(({ evidenceRefs }) => evidenceRefs.includes("quality:unverified"))?.statement).toContain("unverified");
+
+    await repository.saveMetricQualityCheck({ id: "b1000000-0000-4000-8000-000000000003", tenantId: DEMO_TENANT_ID, metricId: METRIC_ID, status: "stale", observedAt: "2026-08-04T00:00:00.000Z", freshnessMinutes: 1_500, completenessPercent: 100, evidenceRefs: ["quality:new-stale"], checkedBy: DEMO_MANAGER_ID, checkedAt: "2026-08-05T00:00:00.000Z" });
+
+    const workspace = await service.workspace(context);
+    expect(workspace.metricProfiles[0]?.latestQuality).toMatchObject({ status: "stale", evidenceRefs: ["quality:new-stale"] });
+    expect(workspace.exceptionSummary).toMatchObject({ staleMetrics: 1, unverifiedMetrics: 0 });
+    const prepared = await service.prepareOccurrence(context, staleOccurrence.id);
+    const metricFact = prepared.briefing?.facts.find(({ evidenceRefs }) => evidenceRefs.includes("quality:new-stale"));
+    expect(metricFact?.statement).toContain("stale");
+    expect(metricFact?.evidenceRefs).not.toContain("quality:old-healthy");
+    expect(metricFact?.evidenceRefs).not.toContain("quality:unverified");
+  });
+
+  it("rejects a same-tenant project that does not belong to the selected portfolio", async () => {
+    const context = createDevelopmentRequestContext("postgres-scenario-scope");
+    await expect(service.createScenario(context, PORTFOLIO_ID, {
+      name: "Outside portfolio", assumptions: ["Project membership constrains scenario applicability"], projectDecisions: [{ projectId: OUT_OF_SCOPE_PROJECT_ID, action: "pause", capacityPercent: 20, rationale: "This project is deliberately not linked to the portfolio." }],
+      expectedBenefit: 0, estimatedCost: 0, riskScore: 8, evidenceRefs: ["scope-check:outside-portfolio"], status: "draft",
+    })).rejects.toThrow("PORTFOLIO_SCENARIO_SCOPE_INVALID");
   });
 });

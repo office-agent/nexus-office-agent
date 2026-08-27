@@ -128,6 +128,7 @@ function seedData(): ManagementIntelligenceData {
 export class InMemoryManagementIntelligenceRepository implements ManagementIntelligenceRepository {
   private data = seedData();
   private readonly activeWecomConnections = new Set([`${DEMO_TENANT_ID}:${DEMO_WECOM_CONNECTION_ID}`]);
+  private readonly portfolioProjects = new Map([[`${DEMO_TENANT_ID}:${DEMO_PORTFOLIO_ID}`, new Set([DEMO_PROJECT_ID])]]);
 
   async getData(tenantId: string) {
     const copy = structuredClone(this.data);
@@ -163,7 +164,12 @@ export class InMemoryManagementIntelligenceRepository implements ManagementIntel
     this.data.metricProfiles[index] = structuredClone(value); return true;
   }
   async saveMetricQualityCheck(value: MetricQualityCheck) { this.data.metricQualityChecks.push(structuredClone(value)); }
-  async portfolioExists(tenantId: string, portfolioId: string) { return tenantId === DEMO_TENANT_ID && portfolioId === DEMO_PORTFOLIO_ID; }
+  async portfolioExists(tenantId: string, portfolioId: string) { return this.portfolioProjects.has(`${tenantId}:${portfolioId}`); }
+  async portfolioContainsProjects(tenantId: string, portfolioId: string, projectIds: string[]) {
+    const included = this.portfolioProjects.get(`${tenantId}:${portfolioId}`);
+    if (!included || projectIds.length === 0) return false;
+    return [...new Set(projectIds)].every((projectId) => included.has(projectId));
+  }
   async saveScenario(value: PortfolioScenario) { this.data.scenarios.push(structuredClone(value)); }
   async getScenario(tenantId: string, id: string) { return structuredClone(this.data.scenarios.find((item) => item.tenantId === tenantId && item.id === id) ?? null); }
   async selectScenario(value: PortfolioScenario, expectedVersion: number) {
@@ -229,4 +235,3 @@ export function getDevelopmentManagementWecomGateway() {
   getDevelopmentManagementIntelligenceRepository();
   return runtime.__nexusManagementWecomGateway!;
 }
-

@@ -366,8 +366,14 @@
     {
       "requirements": ["MR-034", "MR-035"],
       "file": "tests/unit/management-intelligence.test.ts",
-      "testName": "versions metric semantics and never presents missing or stale data as healthy",
-      "failureMode": "指标口径失去版本控制，或缺失、过期数据仍被包装为健康指标。"
+      "testName": "versions metric semantics and never presents missing, stale, or unverified data as healthy",
+      "failureMode": "指标口径失去版本控制，或缺失、过期、待核验数据仍被包装为健康指标。"
+    },
+    {
+      "requirements": ["MR-035"],
+      "file": "tests/integration/postgres-management-intelligence.test.ts",
+      "testName": "makes missing, unverified, and stale metrics visible in the workspace and cadence briefing",
+      "failureMode": "缺失、待核验或过期指标没有进入管理例外摘要，或会前事实包使用了不一致的质量状态。"
     },
     {
       "requirements": ["MR-036", "MR-037"],
