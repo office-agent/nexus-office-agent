@@ -49,13 +49,13 @@
 | MR-016 | 自动验收 | `workflow-governance.test.ts`、`authorization-policy.test.ts`：审批来自策略而不是按钮 |
 | MR-017 | 自动验收 | `workflow-governance.test.ts`、`enterprise-governance.test.ts`：高风险职责分离 |
 | MR-018 | 自动验收 | `agent-security.eval.test.ts`、`governance-api.test.ts`：AI 预审不改变正式状态 |
-| MR-019 | 自动验收 | `workflow-governance.test.ts`：驳回、委托、撤回、并行取消和超时升级显式迁移 |
+| MR-019 | 自动验收 | `workflow-governance.test.ts`：驳回、委托、撤回、并行取消和超时升级显式迁移；委托校验运行状态、版本和高风险职责分离 |
 | MR-020 | 自动验收 | `workflow-governance.test.ts`、`postgres-governance-repositories.test.ts`：运行实例锁定发布版本 |
 | MR-021 | 自动验收 | `meeting-governance.test.ts`：讨论、结论、决定和行动分层 |
 | MR-022 | 自动验收 | `management-loop.test.ts`、`meeting-governance.test.ts`：议题、选项、依据、决定人与复审日期 |
-| MR-023 | 自动验收 | `management-loop.test.ts`、`postgres-management-repository.test.ts`：行动项 Owner、期限、验收标准、来源决定与完成证据 |
+| MR-023 | 自动验收 | `management-loop.test.ts`、`meeting-governance.test.ts`、`postgres-governance-repositories.test.ts`、`postgres-management-repository.test.ts`：会议来源决定、行动项 Owner、期限、验收标准、来源决定与完成证据 |
 | MR-024 | 自动验收 | `management-loop.test.ts`：旧决定保留为 superseded，新决定原子记录 supersedes 关系 |
-| MR-025 | 自动验收 | `meeting-governance.test.ts`：纪要经参会确认后幂等沉淀正式决定与行动 |
+| MR-025 | 自动验收 | `meeting-governance.test.ts`、`postgres-governance-repositories.test.ts`：纪要经参会确认后幂等沉淀正式决定与行动，并保留会议到决定到行动的关联 |
 | MR-026 | 自动验收 | `enterprise-intelligence.test.ts`：绩效事实只取目标、贡献、职责和明确反馈 |
 | MR-027 | 自动验收 | `enterprise-intelligence-api.test.ts`：人才包不评分、不排名、不作雇佣决定 |
 | MR-028 | 自动验收 | `knowledge-permissions.test.ts`、`postgres-enterprise-intelligence.test.ts`：人才敏感数据严格范围与分类 |

@@ -24,17 +24,33 @@ describe("workflow governance", () => {
       ],
     });
     const started = await service.startProcess(requester, { definitionId: v1.definition.id, title: "上线变更", form: { scope: "east" }, riskLevel: 3 });
-    await service.publishDefinition(admin, {
+    const v2 = await service.publishDefinition(admin, {
       definitionId: v1.definition.id, code: "CHANGE", name: "变更审批", startNodeKey: "security",
       nodes: [
         { key: "security", type: "approval", name: "安全审批", approverIds: [DEMO_MANAGER_ID], mode: "all", next: "done", slaHours: 8 },
         { key: "done", type: "end", name: "完成", outcome: "approved" },
       ],
     });
+    const nextStarted = await service.startProcess(requester, { definitionId: v1.definition.id, title: "新版本变更", form: {}, riskLevel: 1 });
     const result = await service.decide(admin, started.approvals[0].id, { decision: "approve", comment: "同意", version: 1 });
     expect(started.instance.definitionVersion).toBe(1);
+    expect(v2.version.version).toBe(2);
+    expect(nextStarted.instance).toMatchObject({ definitionVersion: 2, currentNodeKey: "security" });
     expect(result.instance.status).toBe("approved");
     expect(result.instance.currentNodeKey).toBe("done");
+  });
+
+  it("rejects unreachable nodes in a published process definition", async () => {
+    const service = new WorkflowService(new InMemoryWorkflowRepository(false), new InMemoryEventStore());
+    const admin = context(DEMO_MANAGER_ID, ["process_definition:admin"]);
+    await expect(service.publishDefinition(admin, {
+      code: "BROKEN", name: "不完整流程", startNodeKey: "review",
+      nodes: [
+        { key: "review", type: "approval", name: "审批", approverIds: [DEMO_MANAGER_ID], mode: "all", next: "done", slaHours: 4 },
+        { key: "done", type: "end", name: "完成", outcome: "approved" },
+        { key: "orphan", type: "end", name: "不可达结束", outcome: "rejected" },
+      ],
+    })).rejects.toThrow("PROCESS_NODE_UNREACHABLE");
   });
 
   it("enforces separation of duties for high-risk requests", async () => {
@@ -67,12 +83,27 @@ describe("workflow governance", () => {
     const repository = new InMemoryWorkflowRepository();
     const service = new WorkflowService(repository, new InMemoryEventStore());
     const manager = createDevelopmentRequestContext();
-    const delegated = await service.delegate(manager, DEMO_APPROVAL_ID, { delegateId: DEMO_REQUESTER_ID, version: 1 });
+    const delegateId = "10000000-0000-4000-8000-000000000005";
+    const delegated = await service.delegate(manager, DEMO_APPROVAL_ID, { delegateId, version: 1 });
     expect(delegated.delegated.status).toBe("delegated");
     expect(delegated.replacement.delegatedFromId).toBe(DEMO_APPROVAL_ID);
-    const delegateContext = context(DEMO_REQUESTER_ID, ["approval:update"]);
+    const delegateContext = context(delegateId, ["approval:update"]);
     await expect(service.delegate(delegateContext, delegated.replacement.id, { delegateId: DEMO_MANAGER_ID, version: 1 }))
       .rejects.toThrow("APPROVAL_REDELEGATION_DISABLED");
+  });
+
+  it("keeps high-risk delegation separated from the requester and requires a running process", async () => {
+    const repository = new InMemoryWorkflowRepository();
+    const service = new WorkflowService(repository, new InMemoryEventStore());
+    const manager = createDevelopmentRequestContext();
+    await expect(service.delegate(manager, DEMO_APPROVAL_ID, { delegateId: DEMO_REQUESTER_ID, version: 1 }))
+      .rejects.toThrow("SEPARATION_OF_DUTIES_REQUIRED");
+
+    const requester = context(DEMO_REQUESTER_ID, ["process_instance:update"]);
+    await service.withdraw(requester, DEMO_PROCESS_INSTANCE_ID, { version: 1, reason: "申请终止" });
+    await expect(service.delegate(manager, DEMO_APPROVAL_ID, {
+      delegateId: "10000000-0000-4000-8000-000000000005", version: 2,
+    })).rejects.toThrow("PROCESS_INSTANCE_INVALID_TRANSITION");
   });
 
   it("adds an explicit countersigner without duplicating an existing pending approver", async () => {
@@ -122,6 +153,8 @@ describe("workflow governance", () => {
     expect(result.instance.status).toBe("withdrawn");
     expect(result.cancelledApprovals).toHaveLength(1);
     expect(result.cancelledApprovals[0].status).toBe("cancelled");
+    await expect(service.withdraw(requester, DEMO_PROCESS_INSTANCE_ID, { version: 2, reason: "重复撤回" }))
+      .rejects.toThrow("PROCESS_INSTANCE_INVALID_TRANSITION");
     await expect(service.withdraw(createDevelopmentRequestContext(), DEMO_PROCESS_INSTANCE_ID, { version: 2, reason: "越权尝试" }))
       .rejects.toThrow("POLICY_DENIED:REQUESTER_MISMATCH");
   });
@@ -141,6 +174,8 @@ describe("workflow governance", () => {
       ],
     });
     const started = await service.startProcess(requester, { definitionId: published.definition.id, title: "高风险升级", form: {}, riskLevel: 3 });
+    const early = await service.escalateOverdue(admin, { now: "2020-01-01T00:00:00.000Z", limit: 10 });
+    expect(early.escalated).toEqual([]);
     const result = await service.escalateOverdue(admin, { now: "2099-01-01T00:00:00.000Z", limit: 10 });
     const entry = result.escalated.find(({ source }) => source.id === started.approvals[0].id)!;
     expect(entry.source.status).toBe("escalated");

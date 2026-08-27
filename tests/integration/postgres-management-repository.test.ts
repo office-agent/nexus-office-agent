@@ -20,6 +20,7 @@ const migrations = [
   "0005_workflow_knowledge.sql", "0006_strategy_organization_talent.sql", "0007_client_platform.sql",
   "0008_security_hardening.sql", "0009_atomic_audit.sql", "0010_immutable_audit.sql", "0011_enterprise_governance.sql",
   "0012_enterprise_acceptance.sql", "0013_connector_test_notifications.sql", "0014_durable_runtime.sql",
+  "0043_workflow_meeting_knowledge_completion.sql",
 ];
 
 describe("Postgres management repository", () => {

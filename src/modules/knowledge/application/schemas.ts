@@ -12,4 +12,8 @@ export const publishDocumentSchema = z.object({
   sourceRef: z.string().trim().max(500).optional(),
   effectiveAt: z.iso.datetime({ offset: true }).optional(),
   expiresAt: z.iso.datetime({ offset: true }).optional(),
+}).superRefine((value, context) => {
+  if (value.effectiveAt && value.expiresAt && Date.parse(value.expiresAt) <= Date.parse(value.effectiveAt)) {
+    context.addIssue({ code: "custom", path: ["expiresAt"], message: "失效时间必须晚于生效时间" });
+  }
 });

@@ -40,6 +40,12 @@ export class PostgresKnowledgeRepository implements KnowledgeRepository {
       return rows[0] ? mapDocument(rows[0]) : null;
     });
   }
+  async getDocumentVersion(tenantId: string, documentId: string, version: number) {
+    return this.database.withTenant(tenantId, async (executor) => {
+      const rows = await executor.query("SELECT * FROM document_versions WHERE tenant_id=$1 AND document_id=$2 AND version=$3", [tenantId,documentId,version]);
+      return rows[0] ? mapVersion(rows[0]) : null;
+    });
+  }
   async listPublishedDocuments(tenantId: string) {
     return this.database.withTenant(tenantId, async (executor) => {
       const rows = await executor.query("SELECT * FROM documents WHERE tenant_id=$1 AND status='published' ORDER BY title", [tenantId]);

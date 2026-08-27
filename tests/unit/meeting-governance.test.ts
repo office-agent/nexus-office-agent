@@ -43,6 +43,8 @@ describe("meeting governance", () => {
     const first = await managementRepository.getSnapshot(context.tenantId, DEMO_PROJECT_ID);
     expect(first?.decisions).toHaveLength(1);
     expect(first?.actionItems).toHaveLength(1);
+    expect(first?.decisions[0].sourceMeetingId).toBe(DEMO_MEETING_ID);
+    expect(first?.actionItems[0].decisionId).toBe(first?.decisions[0].id);
     await service.confirm(context, DEMO_MEETING_ID, result.meeting.version);
     const repeated = await managementRepository.getSnapshot(context.tenantId, DEMO_PROJECT_ID);
     expect(repeated?.decisions).toHaveLength(1);

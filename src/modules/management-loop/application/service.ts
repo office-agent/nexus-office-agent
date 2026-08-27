@@ -59,6 +59,7 @@ export class ManagementLoopService {
       decisionId?: string;
       projectId: string;
       riskId?: string;
+      sourceMeetingId?: string;
       title: string;
       decisionContext: string;
       options: string[];
@@ -83,6 +84,7 @@ export class ManagementLoopService {
       tenantId: context.tenantId,
       projectId: input.projectId,
       riskId: input.riskId,
+      sourceMeetingId: input.sourceMeetingId,
       title: input.title,
       context: input.decisionContext,
       options: input.options,
@@ -109,6 +111,7 @@ export class ManagementLoopService {
     await this.repository.saveDecision(decision, actionItems,
       this.event(context, "decision.decided", "decision", decision.id, decision.version, {
         projectId: input.projectId,
+        sourceMeetingId: input.sourceMeetingId,
         actionItemIds: actionItems.map(({ id }) => id),
       }),
     );
@@ -129,6 +132,7 @@ export class ManagementLoopService {
     const original = markDecisionSuperseded(current, replacementId, input.version);
     let replacement: Decision = {
       id: replacementId, tenantId: current.tenantId, projectId: current.projectId, riskId: current.riskId,
+      sourceMeetingId: current.sourceMeetingId,
       title: input.title, context: input.decisionContext, options: input.options, ownerId: current.ownerId,
       supersedesId: current.id, status: "draft", version: 1,
     };

@@ -87,6 +87,8 @@ erDiagram
 
 `draft → under_review → decided → executing → verified → superseded|closed`
 
+由会议确认产生的决定必须保存 `source_meeting_id`，且租户与项目必须和来源会议一致；行动项通过 `decision_id` 建立“会议 → 决定 → 行动”追溯链。人工独立登记的决定可以没有来源会议。
+
 ### 4.4 Agent 动作
 
 `planned → policy_checked → awaiting_confirmation → approved|rejected → executing → succeeded|failed → compensated?`
@@ -134,6 +136,8 @@ KnowledgeItem 不直接等于文件。它保存：
 - 引用定位信息。
 
 检索结果必须在检索前和返回前各执行一次权限过滤，防止索引侧和生成侧越权。
+
+候选检索前还必须确认当前文档版本已生效且未过期；返回前重新读取文档头和准确版本，拒绝权限、当前版本或有效期已经变化的结果。引用至少返回 `documentId`、`documentVersion`、`locator`、`sourceRef`、生效/失效时间、数据分类、当前访问依据和检索时间；访问依据只说明 Owner、显式用户、角色、项目或分类规则，不暴露完整 ACL。
 
 ## 8. 数据保留
 
