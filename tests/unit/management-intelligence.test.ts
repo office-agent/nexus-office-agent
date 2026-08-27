@@ -37,13 +37,18 @@ describe("management intelligence", () => {
     expect(ready).toMatchObject({ status: "ready", version: 3, briefing: { stateChanged: false, degraded: false } });
     expect(ready.briefing?.inferences[0].evidenceRefs).toEqual([`enterprise-case:${DEMO_ENTERPRISE_CASE_ID}:v1`]);
     expect(ready.briefing?.excludedDataScopes).toEqual(expect.arrayContaining(["private_chat", "one_to_one", "credential"]));
+    const scenarioFact = ready.briefing?.facts.find(({ evidenceRefs }) => evidenceRefs.includes(`portfolio-scenario:${DEMO_PORTFOLIO_SCENARIO_ID}:v1`));
+    expect(scenarioFact?.statement).toContain("本月总交付容量保持不变");
+    expect(scenarioFact?.statement).toContain(DEMO_PORTFOLIO_ID);
+    expect(scenarioFact?.statement).toContain(DEMO_PROJECT_ID);
+    expect(scenarioFact?.statement).toContain("容量 65%");
     const running = await service.transitionOccurrence(context, ready.id, { targetStatus: "in_progress", version: ready.version, evidenceRefs: [] });
     const awaiting = await service.transitionOccurrence(context, running.id, { targetStatus: "awaiting_evidence", version: running.version, evidenceRefs: [] });
     await expect(service.transitionOccurrence(context, awaiting.id, { targetStatus: "closed", version: awaiting.version, evidenceRefs: [] })).rejects.toThrow("CADENCE_OUTCOME_EVIDENCE_REQUIRED");
     await expect(service.transitionOccurrence(context, awaiting.id, { targetStatus: "closed", version: awaiting.version, evidenceRefs: ["minutes:weekly-ops:2026-W32"] })).resolves.toMatchObject({ status: "closed", outcomeEvidenceRefs: ["minutes:weekly-ops:2026-W32"] });
   });
 
-  it("versions metric semantics and never presents missing or stale data as healthy", async () => {
+  it("versions metric semantics and never presents missing, stale, or unverified data as healthy", async () => {
     const { service, context } = fixture();
     const workspace = await service.workspace(context);
     const current = workspace.metricProfiles[0];
@@ -63,6 +68,10 @@ describe("management intelligence", () => {
 
   it("compares evidence-bound portfolio scenarios and keeps exactly one selected history", async () => {
     const { service, repository, context } = fixture();
+    await expect(service.createScenario(context, DEMO_PORTFOLIO_ID, {
+      name: "范围外项目", assumptions: ["不得把未纳入组合的项目带入情景"], projectDecisions: [{ projectId: "30000000-0000-4000-8000-000000000099", action: "pause", capacityPercent: 20, rationale: "该项目不在当前组合范围内。" }],
+      expectedBenefit: 0, estimatedCost: 0, riskScore: 10, evidenceRefs: ["scope-check:out-of-portfolio"], status: "draft",
+    })).rejects.toThrow("PORTFOLIO_SCENARIO_SCOPE_INVALID");
     const first = await service.selectScenario(context, DEMO_PORTFOLIO_SCENARIO_ID, 1);
     expect(first).toMatchObject({ status: "selected", selectedBy: context.actorId });
     const alternative = await service.createScenario(context, DEMO_PORTFOLIO_ID, {

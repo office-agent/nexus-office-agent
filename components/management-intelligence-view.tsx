@@ -40,7 +40,7 @@ type Workspace = {
   aiGovernance: AiScorecard;
   recentEvaluations: Evaluation[];
   pendingChannelActions: number;
-  exceptionSummary: { overdueCases: number; criticalCases: number; staleMetrics: number; unpreparedCadences: number };
+  exceptionSummary: { overdueCases: number; criticalCases: number; staleMetrics: number; unverifiedMetrics: number; unpreparedCadences: number };
   generatedAt: string;
 };
 
@@ -132,7 +132,8 @@ export function ManagementIntelligenceView({ actorId, onNotice }: { actorId: str
     <section className="mi-exceptions" aria-label="管理例外摘要">
       <div><small>逾期事项</small><strong>{data.exceptionSummary.overdueCases}</strong></div>
       <div><small>关键事项</small><strong>{data.exceptionSummary.criticalCases}</strong></div>
-      <div><small>失鲜指标</small><strong>{data.exceptionSummary.staleMetrics}</strong></div>
+      <div><small>失鲜或缺失指标</small><strong>{data.exceptionSummary.staleMetrics}</strong></div>
+      <div><small>待核验指标</small><strong>{data.exceptionSummary.unverifiedMetrics}</strong></div>
       <div><small>24h 内待准备</small><strong>{data.exceptionSummary.unpreparedCadences}</strong></div>
       <button onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={14} />刷新事实</button>
     </section>

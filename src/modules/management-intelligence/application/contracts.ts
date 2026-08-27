@@ -32,6 +32,7 @@ export interface ManagementIntelligenceRepository {
   saveMetricProfile(value: MetricSemanticProfile, expectedVersion?: number): Promise<boolean>;
   saveMetricQualityCheck(value: MetricQualityCheck): Promise<void>;
   portfolioExists(tenantId: string, portfolioId: string): Promise<boolean>;
+  portfolioContainsProjects(tenantId: string, portfolioId: string, projectIds: string[]): Promise<boolean>;
   saveScenario(value: PortfolioScenario): Promise<void>;
   getScenario(tenantId: string, id: string): Promise<PortfolioScenario | null>;
   selectScenario(value: PortfolioScenario, expectedVersion: number): Promise<boolean>;
