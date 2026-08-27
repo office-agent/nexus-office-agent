@@ -81,6 +81,7 @@ export class MeetingService {
       await this.management.recordDecision(context, {
         decisionId,
         projectId: materializingMeeting.projectId!,
+        sourceMeetingId: materializingMeeting.id,
         title: proposal.topic,
         decisionContext: proposal.context,
         options: proposal.options,

@@ -5,6 +5,7 @@ export type Decision = {
   tenantId: string;
   projectId?: string;
   riskId?: string;
+  sourceMeetingId?: string;
   title: string;
   context: string;
   options: string[];

@@ -57,11 +57,23 @@ describe("governance workspace HTTP API", () => {
     const searchResponse = await searchKnowledge(new Request("http://localhost/api/v1/knowledge/search?q=数据安全"));
     const search = await searchResponse.json();
     expect(searchResponse.status).toBe(200);
-    expect(search.data[0]).toMatchObject({ title: "客户数据安全分级制度", untrustedContent: true });
+    expect(search.data[0]).toMatchObject({
+      title: "客户数据安全分级制度", sourceRef: "policy:customer-data-security",
+      accessBasis: "owner", untrustedContent: true,
+    });
   });
 
   it("rejects malformed document publication", async () => {
     const response = await publishDocument(post("http://localhost/api/v1/knowledge/documents", { title: "x", content: "", classification: "secret" }));
+    expect(response.status).toBe(422);
+    expect((await response.json()).error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("rejects a document validity window that ends before it starts", async () => {
+    const response = await publishDocument(post("http://localhost/api/v1/knowledge/documents", {
+      title: "失效制度", content: "无效时间窗口", classification: "internal",
+      effectiveAt: "2026-08-27T00:00:00.000Z", expiresAt: "2026-08-26T00:00:00.000Z",
+    }));
     expect(response.status).toBe(422);
     expect((await response.json()).error.code).toBe("VALIDATION_FAILED");
   });

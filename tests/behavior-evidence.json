@@ -106,6 +106,12 @@
       "failureMode": "运行中审批实例漂移到未批准的新流程版本。"
     },
     {
+      "requirements": ["MR-019"],
+      "file": "tests/unit/workflow-governance.test.ts",
+      "testName": "keeps high-risk delegation separated from the requester and requires a running process",
+      "failureMode": "已结束流程仍能委托，或高风险审批通过委托回申请人绕过职责分离。"
+    },
+    {
       "requirements": ["MR-017"],
       "file": "tests/unit/workflow-governance.test.ts",
       "testName": "enforces separation of duties for high-risk requests",
@@ -146,6 +152,24 @@
       "file": "tests/unit/meeting-governance.test.ts",
       "testName": "materializes confirmed decisions and action items exactly once",
       "failureMode": "未确认纪要沉淀正式对象，或重复确认生成重复决定和行动。"
+    },
+    {
+      "requirements": ["MR-023", "MR-025"],
+      "file": "tests/integration/postgres-governance-repositories.test.ts",
+      "testName": "materializes a confirmed meeting outcome idempotently",
+      "failureMode": "会议确认产生的正式决定或行动缺失来源会议、来源决定关联，重启后无法追溯。"
+    },
+    {
+      "requirements": ["PR-006", "SR-002", "SR-006", "AC-007"],
+      "file": "tests/unit/knowledge-permissions.test.ts",
+      "testName": "filters knowledge that is not yet effective or has expired",
+      "failureMode": "未生效或已过期知识仍进入权限感知查询结果。"
+    },
+    {
+      "requirements": ["PR-006", "SR-003", "AC-007"],
+      "file": "tests/unit/knowledge-permissions.test.ts",
+      "testName": "marks retrieved source text as untrusted data",
+      "failureMode": "知识引用缺少原始来源、版本有效时间、访问依据或不可信内容标记。"
     },
     {
       "requirements": ["MR-026", "MR-027", "MR-028", "MR-029"],

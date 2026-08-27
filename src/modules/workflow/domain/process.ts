@@ -134,6 +134,7 @@ export function validateProcessGraph(startNodeKey: string, nodes: ProcessNode[])
   };
   visit(startNodeKey);
   if (![...visited].some((key) => byKey.get(key)?.type === "end")) throw new Error("PROCESS_END_NODE_MISSING");
+  if (visited.size !== byKey.size) throw new Error("PROCESS_NODE_UNREACHABLE");
 }
 
 function readField(form: Record<string, unknown>, field: string): unknown {

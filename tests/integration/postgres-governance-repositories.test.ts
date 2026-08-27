@@ -32,7 +32,7 @@ describe("Postgres workflow, meeting and knowledge repositories", () => {
 
   beforeEach(async () => {
     database = new PGlite();
-    for (const file of ["0001_foundation.sql","0002_management_loop.sql","0003_agent_platform.sql","0004_connector_platform.sql","0005_workflow_knowledge.sql","0006_strategy_organization_talent.sql"]) {
+    for (const file of ["0001_foundation.sql","0002_management_loop.sql","0003_agent_platform.sql","0004_connector_platform.sql","0005_workflow_knowledge.sql","0006_strategy_organization_talent.sql","0043_workflow_meeting_knowledge_completion.sql"]) {
       await database.exec(await readFile(path.resolve("src/platform/database/migrations", file), "utf8"));
     }
     const executor: DatabaseExecutor = {
@@ -96,11 +96,11 @@ describe("Postgres workflow, meeting and knowledge repositories", () => {
   it("invalidates old knowledge chunks and searches only the current version", async () => {
     const service = new KnowledgeService(new PostgresKnowledgeRepository(adapter));
     const owner = context(managerId, ["document:create","document:update","document:read"]);
-    const first = await service.publish(owner, { title: "安全制度", content: "生产导出需要审批。", classification: "internal" });
-    await service.publish(owner, { documentId: first.document.id, title: "安全制度", content: "生产导出需要双人审批并保留审计。", classification: "internal" });
+    const first = await service.publish(owner, { title: "安全制度", content: "生产导出需要审批。", classification: "internal", sourceRef: "policy:security-v1" });
+    await service.publish(owner, { documentId: first.document.id, title: "安全制度", content: "生产导出需要双人审批并保留审计。", classification: "internal", sourceRef: "policy:security-v2" });
     const results = await service.search(owner, "生产导出 审批");
     expect(results).toHaveLength(1);
-    expect(results[0]).toMatchObject({ documentVersion: 2, untrustedContent: true });
+    expect(results[0]).toMatchObject({ documentVersion: 2, sourceRef: "policy:security-v2", accessBasis: "owner", untrustedContent: true });
     const states = await database.query<{ status: string; count: number }>("SELECT status,count(*)::int AS count FROM knowledge_items GROUP BY status ORDER BY status");
     expect(states.rows).toEqual([{ status: "active", count: 1 }, { status: "invalidated", count: 1 }]);
   });
@@ -128,5 +128,9 @@ describe("Postgres workflow, meeting and knowledge repositories", () => {
     await service.confirm(manager, meeting.id, confirmed.meeting.version);
     const counts = await database.query<{ decisions: number; actions: number }>("SELECT (SELECT count(*)::int FROM decisions) AS decisions,(SELECT count(*)::int FROM action_items) AS actions");
     expect(counts.rows[0]).toEqual({ decisions: 1, actions: 1 });
+    const links = await database.query<{ source_meeting_id: string; decision_id: string }>(
+      "SELECT d.source_meeting_id,a.decision_id FROM decisions d JOIN action_items a ON a.decision_id=d.id",
+    );
+    expect(links.rows).toEqual([{ source_meeting_id: meeting.id, decision_id: confirmed.decisionIds[0] }]);
   });
 });

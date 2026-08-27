@@ -2,6 +2,7 @@ import type { Document, DocumentVersion, KnowledgeItem } from "@/src/modules/kno
 
 export interface KnowledgeRepository {
   getDocument(tenantId: string, id: string): Promise<Document | null>;
+  getDocumentVersion(tenantId: string, documentId: string, version: number): Promise<DocumentVersion | null>;
   listPublishedDocuments(tenantId: string): Promise<Document[]>;
   savePublishedDocument(document: Document, version: DocumentVersion, items: KnowledgeItem[]): Promise<void>;
   searchCandidates(tenantId: string, query: string, allowedDocumentIds: string[], limit: number): Promise<KnowledgeItem[]>;

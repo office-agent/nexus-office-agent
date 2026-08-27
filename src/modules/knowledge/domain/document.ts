@@ -56,7 +56,11 @@ export type KnowledgeCitation = {
   title: string;
   excerpt: string;
   locator: string;
+  sourceRef?: string;
+  effectiveAt: string;
+  expiresAt?: string;
   classification: DataClassification;
+  accessBasis: "owner" | "explicit_user" | "role" | "project" | "classification";
   retrievedAt: string;
   untrustedContent: true;
 };

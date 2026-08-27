@@ -1,92 +1,87 @@
 # Current Task
 
-- ID: `P04`
-- Title: `企业治理模块验证`
+- ID: `P05`
+- Title: `流程、会议与知识模块补全`
 - Status: `handoff`
-- Owner: `fjf1113`
-- Next owner: `P05`
+- Owner: `P05`
+- Next owner: `reviewer`
 
 ## Goal
 
-通过现有领域代码、应用服务、仓储和测试验证企业治理的主要业务流程，并补充一个明确的边界测试，形成可重复验证、可安全交接的工程检查点。
+依据产品、企业管理、领域数据、权限安全和 API 契约文档，对流程审批、会议决定转化和权限感知知识引用中尚未完成的产品能力进行二次开发，形成领域规则、应用服务、持久化、API 与自动化测试闭环。
 
 ## Acceptance scenarios
 
-- [x] 梳理组织调整和人员离职责任移交的实现链路及测试证据。
-- [x] 梳理项目基线变更和项目关闭的实现链路及测试证据。
-- [x] 梳理重点关注事项、审计和补偿机制的实现链路及测试证据。
-- [x] 运行企业治理相关单元、API 和 PostgreSQL 测试并记录真实结果。
-- [x] 补充“补偿计划过期后拒绝执行且项目数据保持不变”的单元测试。
-- [x] 运行相关回归和 VibeCollab 检查，记录真实结果并准备 P05 交接。
+- [x] 流程定义发布新版本后，运行实例稳定使用启动版本，新实例使用最新发布版本。
+- [x] 审批、委托、撤回和超时升级均校验操作人、对象状态、职责分离和并发版本。
+- [x] 会议只有在必需确认人完成确认后，才将结论对应的决定及其行动项幂等转化为正式对象并保留会议来源关联。
+- [x] 行动项保留责任人、期限、验收标准和来源决定关联，会议确认事件可追溯正式决定。
+- [x] 知识检索在候选检索前和结果返回前校验访问范围、当前版本及有效期。
+- [x] 知识引用返回来源文档、版本、定位、原始来源、有效时间和访问依据，并继续标记外部内容不可信。
+- [x] 相关单元、API、PostgreSQL、类型、Lint、构建与仓库同步检查通过，或如实记录已有基线阻塞。
 
 ## Invariants
 
-- 保持租户隔离、服务端权限校验、版本冲突保护和审计可追踪。
-- 高风险治理动作必须遵守现有职责分离和人工确认边界。
-- 优先补充测试；只有测试稳定证明存在真实缺陷时，才提出最小产品代码修复。
-- 默认只修改 `src/modules/enterprise-governance`、对应测试、必要文档和 `.ai-team/TASK.md`。
-- 不修改权限底层、Pi Agent、Worker、部署及其他无关模块。
-- 不扩大处理 P03 已记录的全仓库基线问题。
-- 不伪造或推测测试结果。
-- 公开仓库不提交密钥、私人数据、原始工具输出、运行产物或私有 Session 文件。
+- 保持租户隔离、服务端权限校验、数据范围过滤和失败关闭。
+- 保持高风险职责分离、人工最终确认和 Agent 只读预审边界。
+- 所有写操作继续使用对象版本或 compare-and-set 防止丢失更新。
+- 会议确认、决定、行动项和事件保持幂等、可追溯；不把讨论或草稿误记为正式事实。
+- 源文档权限、版本或有效期变化后，不得继续返回失效知识。
+- 不修改无关的 Pi Agent、连接器、部署或企业治理模块。
+- 不覆盖或混入接棒前已有的 `next-env.d.ts` 工作区修改。
+- 不伪造测试结果，不提交密钥、私人数据、运行产物或私有 Session 文件。
 
 ## Decisions
 
-- P04 首个可合并成果选择治理流程测试，不主动进行大范围重构。
-- 按“领域规则 → 应用服务 → 仓储 → API → 测试”顺序梳理实现。
-- 先运行现有聚焦测试，再补充补偿计划过期边界测试。
-- 如果新增测试发现产品缺陷，先记录失败证据和最小修复方案，等待确认后再修改产品代码。
-- P03 已记录的 Artifact Route、Windows Firecracker、全量测试内存和依赖审计问题不作为 P04 默认修复项。
+- P04 已由 PR #3 合并为提交 `88df713`，P05 从该 `main` 创建分支 `codex/p05-workflow-meeting-knowledge`。
+- P05 是缺失产品能力的二次开发，不以单纯增加边界测试替代实现。
+- P05 严格限定为流程定义/版本/实例，审批/委托/撤回/升级，会议确认/行动转化，以及知识权限/引用/来源；不新增审批转交等范围外能力。
+- 会议转化产生的正式决定保存来源会议标识，行动项继续通过来源决定建立关联。
+- 知识引用补充来源与权限解释，同时以文档当前版本有效期进行检索前、返回前双重校验。
+- 数据库变化通过新迁移追加，不改写已发布迁移。
 
 ## Completed
 
-- P03 已通过提交 `f4c713e` 合并并交接给 P04。
-- 已创建分支 `codex/p04-enterprise-governance`。
-- `npm ci` 已成功安装 606 个包；安装过程报告已有的 2 个依赖审计问题，未执行自动修复或依赖升级。
-- 接棒前 `node .ai-team/check.mjs --base origin/main` 返回 `Result: valid`。
-- 接棒前工作区为 clean 状态。
-- 公开仓库的 Private sessions 保持 disabled。
-- 已按领域规则、应用服务、仓储、API 和测试梳理组织调整与离职责任移交、项目基线变更与关闭、重点关注、审计和补偿机制的实现链路及现有测试证据。
-- P04 原始聚焦基线为 3 个测试文件、12 个测试通过。
-- 已增加补偿计划过期边界单元测试，验证在 `expiresAt` 时执行被拒绝为 `COMPENSATION_EXPIRED`，且项目与补偿计划均保持不变。
-- 新增测试后的单元测试为 1 个测试文件、8 个测试通过；P04 聚焦回归为 3 个测试文件、13 个测试通过。
-- 本次未修改 `src/modules/enterprise-governance` 或其他产品代码。
-- 交付前最新 P04 聚焦回归和 lint 均通过；typecheck 仅报告 P03 已记录的 3 个 Artifact Route 模块缺失，未出现 P04 类型错误。
-- handoff 状态 VibeCollab 检查返回 `Result: valid`，Private sessions 保持 disabled。
-- P04 变更已通过提交 `3a2ff00` 提交并推送，已创建 PR #3。
-- PR #3 的最新 GitHub `repo-task-sync` 自动检查已通过。
-- PR #3 评审期间，负责人独立复跑 P04 聚焦回归，3 个测试文件、13 项测试全部通过；`node .ai-team/check.mjs --base origin/main` 返回 `Result: valid`。
+- 已确认 P04 PR #3 通过合并提交 `88df713` 进入 `main`，本地 `main` 与 `origin/main` 一致。
+- 已阅读共享项目、任务与交接规范，以及流程、会议、知识相关产品、领域、架构、安全、API、路线图和需求追踪文档。
+- 已阅读当前 Next.js 版本的 Route Handler 与动态参数约定。
+- 已创建分支 `codex/p05-workflow-meeting-knowledge`。
+- 已完成现状盘点，确认流程图未拒绝不可达节点、委托缺少运行状态及高风险职责分离校验、会议正式决定缺少来源会议关联、知识有效期未参与检索且引用缺少原始来源及访问依据。
+- 接棒前相关基线为 6 个测试文件、30 项测试通过。
+- 流程定义图现在拒绝不可达节点；版本测试同时证明旧实例继续使用 V1、新实例使用 V2。
+- 委托现在校验流程实例仍为运行中，并阻止高风险审批委托回申请人；撤回重复执行和未逾期升级均有状态证据。
+- 正式决定新增 `sourceMeetingId`；迁移 `0043` 使用租户复合外键，仓储额外校验来源会议与决定属于同一项目；行动项继续通过 `decisionId` 关联。
+- 知识查询现在对当前文档版本执行检索前与返回前双重权限/有效期校验；引用返回 `sourceRef`、生效/失效时间与不泄露 ACL 的 `accessBasis`。
+- 知识发布时间窗口同时由 API Schema 与服务端校验，失效时间不得早于或等于生效时间。
+- 已更新领域数据、API 契约、需求追踪和行为证据文档。
+- P05 聚焦回归最终为 7 个测试文件、36 项测试通过；迁移链聚焦回归为 3 个测试文件、10 项测试通过。
+- 全量测试沙箱外复跑为 116 个测试文件通过、444 项测试通过、8 个文件跳过；剩余 3 个文件/5 项失败均为 P03/P04 已记录的范围外基线。
 
 ## Pending
 
-- 全仓库 typecheck 仍受 P03 已记录的 3 个 Artifact Route 模块缺失影响。
-- PR #3 当前为 open，等待负责人复审并合并。
-- P05 必须等待 PR #3 合并到 `main` 后，再从最新 `main` 创建 P05 分支并接棒。
+- 全仓库 typecheck/build 仍受 P03 已记录的 3 个 Artifact Route 模块缺失影响。
+- 全量测试仍有 P03/P04 已记录的 Firecracker 根目录写入和 Windows 路径跨平台断言问题；均未修改。
+- P05 范围内实现和验证已完成，等待负责人审阅并合并 PR。
 
 ## Next step
 
-PR #3 复审、检查通过并合并到 `main` 后，由 P05 拉取最新 `main` 验收交接，创建 P05 分支，将 `Owner` 更新为 P05、`Status` 更新为 `active`，再开始 P05 工作。
+负责人审阅 P05 PR；检查通过后合并到 `main`，再由下一任务从最新 `main` 接棒。
 
 ## Verification
 
-- [x] `npm ci`：exit 0，安装 606 个包；报告 2 个已有依赖审计问题，未执行自动修复。
-- [x] 接棒前 `node .ai-team/check.mjs --base origin/main`：exit 0，`Result: valid`。
-- [x] P04 原始单元、API 和 PostgreSQL 聚焦基线：exit 0，3 个测试文件、12 个测试通过。
-- [x] 新增补偿计划过期测试后的单元测试：exit 0，1 个测试文件、8 个测试通过。
-- [x] P04 交付前最新聚焦回归：exit 0，3 个测试文件、13 个测试通过。
-- [x] `npm run lint`：exit 0，0 errors，0 warnings。
-- [x] `npm run typecheck`：exit 1；仅 `tests/integration/task-command-api.test.ts` 第 10 至 12 行报告 3 个已记录的 Artifact Route 模块缺失 `TS2307`，未出现 P04 类型错误。
+- [x] P04 合并检查：`main` 与 `origin/main` 均位于 `88df713`。
+- [x] 接棒前聚焦基线：6 个测试文件、30 项测试通过。
+- [x] P05 聚焦回归：exit 0，7 个测试文件、36 项测试通过。
+- [x] P05 PostgreSQL 全迁移链聚焦回归：exit 0，3 个测试文件、10 项测试通过。
+- [x] `npm run typecheck`：exit 2；仅报告 P03 已记录的 3 个 Artifact Route 模块缺失，未出现 P05 类型错误。
+- [x] `npm run lint`：exit 0。
+- [x] `npm test`：沙箱外复跑 116 个测试文件、444 项测试通过、26 项跳过；3 个文件/5 项范围外基线失败。
+- [x] `npm run build`：编译成功，类型阶段仅因相同 3 个 Artifact Route 模块缺失而 exit 1。
 - [x] `git diff --check`：exit 0。
-- [x] handoff 状态 `node .ai-team/check.mjs --base origin/main`：exit 0，`Result: valid`，Private sessions disabled。
-- [x] PR #3 已创建，最新 GitHub `repo-task-sync` 自动检查通过。
-- [x] PR #3 评审复跑：3 个测试文件、13 项测试全部通过；`node .ai-team/check.mjs --base origin/main` 返回 `Result: valid`。
-- [x] 交接事实更新后 `node .ai-team/check.mjs --base origin/main`：exit 0，`Result: valid`，Private sessions disabled。
-- [x] 交接事实更新后 P04 聚焦回归：exit 0，3 个测试文件、13 项测试全部通过。
-- [x] 交接事实更新后 `npm run lint`：exit 0。
-- [x] 交接事实更新后 `npm run typecheck`：exit 1；仍仅报告 P03 已记录的 3 个 Artifact Route 模块缺失 `TS2307`，未出现新增错误。
+- [x] `node .ai-team/check.mjs --base origin/main`：exit 0，功能进度 7/7，`Result: valid`，Private sessions disabled。
 
 ## Handoff note
 
-- From: `fjf1113`
+- From: `P04`
 - To: `P05`
-- Summary: P04 已完成组织调整与离职责任移交、项目基线变更与关闭、重点关注、审计和补偿机制的实现链路验证；新增补偿计划在 `expiresAt` 时拒绝执行且项目与计划保持不变的单元测试。PR #3 已创建，最新 GitHub `repo-task-sync` 自动检查通过；交付前与评审复跑均为 3 个聚焦测试文件、13 项测试通过。产品代码无需修改；typecheck 仅有已记录的 3 个 Artifact Route 模块缺失，未出现 P04 类型错误。P05 应在 PR #3 合并后从最新 `main` 创建 P05 分支并将任务切换为 P05/active。
+- Summary: P04 已合并；P05 已在既定范围内补齐流程图完整性和流程版本验证、委托状态/职责分离校验、会议到决定到行动的持久化关联，以及知识有效期、来源和访问依据。相关聚焦回归、迁移链、Lint、差异和仓库同步检查通过；全仓库剩余失败均为已记录的范围外基线。等待负责人审阅并合并 PR。

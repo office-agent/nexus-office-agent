@@ -180,6 +180,10 @@ export class WorkflowService {
     requirePolicy(context, "update", "approval", current.id, current.approverId);
     if (current.approverId !== context.actorId) throw new Error("POLICY_DENIED:APPROVER_MISMATCH");
     if (current.version !== input.version) throw new Error("APPROVAL_VERSION_CONFLICT");
+    const instance = await this.repository.getInstance(context.tenantId, current.instanceId);
+    if (!instance) throw new Error("PROCESS_INSTANCE_NOT_FOUND");
+    if (instance.status !== "running") throw new Error("PROCESS_INSTANCE_INVALID_TRANSITION");
+    if (instance.riskLevel >= 3 && input.delegateId === instance.requesterId) throw new Error("SEPARATION_OF_DUTIES_REQUIRED");
     const delegated = applyDelegation(current, input.delegateId);
     if (!(await this.repository.saveApproval(delegated, current.version))) throw new Error("APPROVAL_VERSION_CONFLICT");
     const replacement: Approval = {

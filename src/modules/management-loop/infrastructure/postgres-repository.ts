@@ -102,6 +102,7 @@ function mapIssue(row: Row): Issue {
 function mapDecision(row: Row): Decision {
   return {
     id: text(row.id), tenantId: text(row.tenant_id), projectId: optionalText(row.project_id), riskId: optionalText(row.risk_id),
+    sourceMeetingId: optionalText(row.source_meeting_id),
     title: text(row.title), context: text(row.context), options: row.options as string[], selectedOption: optionalText(row.selected_option),
     rationale: optionalText(row.rationale), ownerId: text(row.owner_id), decidedBy: optionalText(row.decided_by),
     status: row.status as Decision["status"], reviewAt: optionalText(row.review_at), supersedesId: optionalText(row.supersedes_id),
@@ -182,11 +183,18 @@ export class PostgresManagementLoopRepository implements ManagementLoopRepositor
         const risks = await executor.query("SELECT id FROM risks WHERE tenant_id=$1 AND id=$2 AND project_id=$3", [decision.tenantId,decision.riskId,decision.projectId]);
         if (risks.length !== 1) throw new Error("RISK_PROJECT_MISMATCH");
       }
+      if (decision.sourceMeetingId) {
+        const meetings = await executor.query(
+          "SELECT id FROM meeting_records WHERE tenant_id=$1 AND id=$2 AND project_id=$3",
+          [decision.tenantId,decision.sourceMeetingId,decision.projectId],
+        );
+        if (meetings.length !== 1) throw new Error("MEETING_PROJECT_MISMATCH");
+      }
       await executor.query(
-      `INSERT INTO decisions(id,tenant_id,project_id,risk_id,title,context,options,selected_option,rationale,owner_id,decided_by,status,review_at,supersedes_id,version)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-       ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,context=EXCLUDED.context,options=EXCLUDED.options,selected_option=EXCLUDED.selected_option,rationale=EXCLUDED.rationale,owner_id=EXCLUDED.owner_id,decided_by=EXCLUDED.decided_by,status=EXCLUDED.status,review_at=EXCLUDED.review_at,supersedes_id=EXCLUDED.supersedes_id,version=EXCLUDED.version,updated_at=now()`,
-      [decision.id,decision.tenantId,decision.projectId ?? null,decision.riskId ?? null,decision.title,decision.context,decision.options,decision.selectedOption ?? null,decision.rationale ?? null,decision.ownerId,decision.decidedBy ?? null,decision.status,decision.reviewAt ?? null,decision.supersedesId ?? null,decision.version],
+      `INSERT INTO decisions(id,tenant_id,project_id,risk_id,source_meeting_id,title,context,options,selected_option,rationale,owner_id,decided_by,status,review_at,supersedes_id,version)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       ON CONFLICT(id) DO UPDATE SET source_meeting_id=EXCLUDED.source_meeting_id,title=EXCLUDED.title,context=EXCLUDED.context,options=EXCLUDED.options,selected_option=EXCLUDED.selected_option,rationale=EXCLUDED.rationale,owner_id=EXCLUDED.owner_id,decided_by=EXCLUDED.decided_by,status=EXCLUDED.status,review_at=EXCLUDED.review_at,supersedes_id=EXCLUDED.supersedes_id,version=EXCLUDED.version,updated_at=now()`,
+      [decision.id,decision.tenantId,decision.projectId ?? null,decision.riskId ?? null,decision.sourceMeetingId ?? null,decision.title,decision.context,decision.options,decision.selectedOption ?? null,decision.rationale ?? null,decision.ownerId,decision.decidedBy ?? null,decision.status,decision.reviewAt ?? null,decision.supersedesId ?? null,decision.version],
       );
       for (const item of actionItems) {
         if (item.projectId !== decision.projectId || item.decisionId !== decision.id) throw new Error("ACTION_ITEM_DECISION_MISMATCH");
@@ -211,9 +219,9 @@ export class PostgresManagementLoopRepository implements ManagementLoopRepositor
       );
       if (updated.length !== 1) return false;
       await executor.query(
-        `INSERT INTO decisions(id,tenant_id,project_id,risk_id,title,context,options,selected_option,rationale,owner_id,decided_by,status,review_at,supersedes_id,version)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-        [replacement.id,replacement.tenantId,replacement.projectId ?? null,replacement.riskId ?? null,replacement.title,replacement.context,replacement.options,replacement.selectedOption!,replacement.rationale!,replacement.ownerId,replacement.decidedBy!,replacement.status,replacement.reviewAt ?? null,replacement.supersedesId!,replacement.version],
+        `INSERT INTO decisions(id,tenant_id,project_id,risk_id,source_meeting_id,title,context,options,selected_option,rationale,owner_id,decided_by,status,review_at,supersedes_id,version)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+        [replacement.id,replacement.tenantId,replacement.projectId ?? null,replacement.riskId ?? null,replacement.sourceMeetingId ?? null,replacement.title,replacement.context,replacement.options,replacement.selectedOption!,replacement.rationale!,replacement.ownerId,replacement.decidedBy!,replacement.status,replacement.reviewAt ?? null,replacement.supersedesId!,replacement.version],
       );
       await insertOutbox(executor, event);
       return true;

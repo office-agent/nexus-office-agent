@@ -45,8 +45,24 @@ function canRead(context: RequestContext, document: Document, forAgent: boolean)
   return explicitlyAllowed(context, document.access);
 }
 
+function accessBasis(context: RequestContext, document: Document, forAgent: boolean): KnowledgeCitation["accessBasis"] | null {
+  if (!canRead(context, document, forAgent)) return null;
+  if (document.access.ownerId === context.actorId) return "owner";
+  if (document.access.allowedUserIds.includes(context.actorId)) return "explicit_user";
+  if (document.access.allowedRoleCodes.some((role) => context.roles.includes(role))) return "role";
+  if (document.access.projectIds.some((projectId) => context.dataScopes.some((scope) => scope.type === "project" && scope.projectIds.includes(projectId)))) return "project";
+  return "classification";
+}
+
+function versionIsEffective(version: DocumentVersion, now: Date): boolean {
+  const effectiveAt = Date.parse(version.effectiveAt);
+  const expiresAt = version.expiresAt ? Date.parse(version.expiresAt) : undefined;
+  return Number.isFinite(effectiveAt) && effectiveAt <= now.getTime()
+    && (expiresAt === undefined || (Number.isFinite(expiresAt) && expiresAt > now.getTime()));
+}
+
 export class KnowledgeService {
-  constructor(private readonly repository: KnowledgeRepository) {}
+  constructor(private readonly repository: KnowledgeRepository, private readonly now: () => Date = () => new Date()) {}
 
   async listDocuments(context: RequestContext, forAgent = false) {
     const documents = await this.repository.listPublishedDocuments(context.tenantId);
@@ -77,6 +93,11 @@ export class KnowledgeService {
     if (current && current.ownerId !== context.actorId && !context.permissions.includes("document:admin") && !context.permissions.includes("*")) {
       throw new Error("POLICY_DENIED:DOCUMENT_OWNER_REQUIRED");
     }
+    const publishedAt = this.now();
+    const effectiveAt = input.effectiveAt ? new Date(input.effectiveAt) : publishedAt;
+    const expiresAt = input.expiresAt ? new Date(input.expiresAt) : undefined;
+    if (Number.isNaN(effectiveAt.getTime())) throw new Error("DOCUMENT_EFFECTIVE_TIME_INVALID");
+    if (expiresAt && (Number.isNaN(expiresAt.getTime()) || expiresAt <= effectiveAt)) throw new Error("DOCUMENT_EXPIRY_INVALID");
     const nextVersion = (current?.currentVersion ?? 0) + 1;
     const access: DocumentAccess = {
       ownerId: current?.ownerId ?? context.actorId,
@@ -98,8 +119,8 @@ export class KnowledgeService {
     const version: DocumentVersion = {
       id: randomUUID(), tenantId: context.tenantId, documentId: document.id, version: nextVersion,
       content, contentDigest: digest(content), sourceRef: input.sourceRef,
-      effectiveAt: input.effectiveAt ?? new Date().toISOString(), expiresAt: input.expiresAt,
-      supersedesVersion: current?.currentVersion, publishedBy: context.actorId, publishedAt: new Date().toISOString(),
+      effectiveAt: effectiveAt.toISOString(), expiresAt: expiresAt?.toISOString(),
+      supersedesVersion: current?.currentVersion, publishedBy: context.actorId, publishedAt: publishedAt.toISOString(),
     };
     const items: KnowledgeItem[] = chunks(content).map((chunk, index) => ({
       id: randomUUID(), tenantId: context.tenantId, documentId: document.id, documentVersion: nextVersion,
@@ -114,22 +135,36 @@ export class KnowledgeService {
     const normalized = query.trim();
     if (!normalized) throw new Error("KNOWLEDGE_QUERY_REQUIRED");
     const forAgent = options.forAgent ?? true;
+    const now = this.now();
     const heads = await this.repository.listPublishedDocuments(context.tenantId);
-    const allowedIds = heads.filter((document) => canRead(context, document, forAgent)).map(({ id }) => id);
+    const preflightVersions = new Map<string, DocumentVersion>();
+    const allowedIds: string[] = [];
+    for (const document of heads) {
+      if (!accessBasis(context, document, forAgent)) continue;
+      const version = await this.repository.getDocumentVersion(context.tenantId, document.id, document.currentVersion);
+      if (!version || !versionIsEffective(version, now)) continue;
+      preflightVersions.set(document.id, version);
+      allowedIds.push(document.id);
+    }
     if (allowedIds.length === 0) return [];
     const candidates = await this.repository.searchCandidates(context.tenantId, normalized, allowedIds, Math.min(options.limit ?? 8, 20));
     const documents = new Map(heads.map((document) => [document.id, document]));
-    const retrievedAt = new Date().toISOString();
+    const retrievedAt = now.toISOString();
     const citations: KnowledgeCitation[] = [];
     for (const item of candidates) {
       const latest = await this.repository.getDocument(context.tenantId, item.documentId);
       const prefiltered = documents.get(item.documentId);
-      if (!latest || !prefiltered || latest.version !== prefiltered.version) continue;
-      if (!canRead(context, latest, forAgent) || latest.currentVersion !== item.documentVersion || item.status !== "active") continue;
+      const preflightVersion = preflightVersions.get(item.documentId);
+      if (!latest || !prefiltered || !preflightVersion || latest.version !== prefiltered.version) continue;
+      const latestVersion = await this.repository.getDocumentVersion(context.tenantId, latest.id, latest.currentVersion);
+      const basis = accessBasis(context, latest, forAgent);
+      if (!basis || !latestVersion || !versionIsEffective(latestVersion, now)) continue;
+      if (latestVersion.id !== preflightVersion.id || latest.currentVersion !== item.documentVersion || item.status !== "active") continue;
       citations.push({
         id: item.id, documentId: item.documentId, documentVersion: item.documentVersion,
         title: latest.title, excerpt: item.content.slice(0, 320), locator: item.locator,
-        classification: latest.classification, retrievedAt, untrustedContent: true,
+        sourceRef: latestVersion.sourceRef, effectiveAt: latestVersion.effectiveAt, expiresAt: latestVersion.expiresAt,
+        classification: latest.classification, accessBasis: basis, retrievedAt, untrustedContent: true,
       });
     }
     return citations;

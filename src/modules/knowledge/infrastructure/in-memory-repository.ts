@@ -26,6 +26,11 @@ export class InMemoryKnowledgeRepository implements KnowledgeRepository {
     return document?.tenantId === tenantId ? structuredClone(document) : null;
   }
 
+  async getDocumentVersion(tenantId: string, documentId: string, version: number): Promise<DocumentVersion | null> {
+    const item = this.versions.get(`${documentId}:${version}`);
+    return item?.tenantId === tenantId ? structuredClone(item) : null;
+  }
+
   async listPublishedDocuments(tenantId: string): Promise<Document[]> {
     return [...this.documents.values()].filter((item) => item.tenantId === tenantId && item.status === "published").map((item) => structuredClone(item));
   }
@@ -73,7 +78,7 @@ export class InMemoryKnowledgeRepository implements KnowledgeRepository {
     const contentDigest = createHash("sha256").update(content).digest("hex");
     const version: DocumentVersion = {
       id: "85100000-0000-4000-8000-000000000001", tenantId: DEMO_TENANT_ID, documentId: document.id,
-      version: 1, content, contentDigest, effectiveAt: "2026-07-01T00:00:00.000Z",
+      version: 1, content, contentDigest, sourceRef: "policy:customer-data-security", effectiveAt: "2026-07-01T00:00:00.000Z",
       publishedBy: DEMO_MANAGER_ID, publishedAt: "2026-07-01T00:00:00.000Z",
     };
     const item: KnowledgeItem = {
