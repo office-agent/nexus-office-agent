@@ -32,7 +32,7 @@
 
 ## Decisions
 
-- P06 已由 PR #5 合并为提交 `0f6ca30`；任务仓库随后合入原始仓库提交，P07 从 `main` 的 `4c3216c` 创建分支 `p07-企业协作平台集成`。
+- P06 已由 PR #5 合并为提交 `0f6ca30`；任务仓库随后合入原始仓库提交，P07 从 `main` 的 `4c3216c` 创建分支，现按仓库约定命名为 `codex/p07-enterprise-collaboration-integration`。
 - 保留现有回调 URL 的 `tenant_id` 兼容性，本轮通过数据库连接组合匹配、失败关闭及使用连接记录中的可信 tenant 继续处理来证明绑定，不引入绕过 RLS 的全局连接查询。
 - 合法 duplicate 属于幂等结果，不属于认证失败：飞书、钉钉和企业微信继续收到各自协议要求的成功 ACK。
 - 在 `WebhookIngressService.receive()` seam 验证回调行为，在 replay store interface 验证持久化原子性；数据库测试使用 PGlite，只有三方平台网络使用 mock adapter。
@@ -44,7 +44,7 @@
 ## Completed
 
 - 已确认 P06 实际合并状态与过期 TASK Pending 的差异；当前 P07 基线 `4c3216c` 与 `main`、`origin/main` 一致，接棒前工作区 clean。
-- 已创建并检出分支 `p07-企业协作平台集成`。
+- 已创建、检出并推送分支 `codex/p07-enterprise-collaboration-integration`；旧的中文远端分支名已移除，提交历史保持不变。
 - 已阅读 AGENTS、PROJECT、TASK、共享协作规范、连接器设计及当前 Next.js Route Handler 指南，并确认 P07 测试 seam。
 - 已执行 `npm ci`；按 lockfile 安装 610 个包并审计 611 个包，报告 1 个 moderate 和 1 个 high 既有依赖问题，未执行自动修复。
 - 已梳理统一 Connector、三平台 verifier/normalizer、Webhook ingress、外部身份 control plane、Inbox、通知路由和接入验收控制面。
