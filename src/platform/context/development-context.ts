@@ -161,6 +161,9 @@ const DEVELOPMENT_PERMISSIONS = [
   "pi:data:confidential",
   "pi:data:restricted",
   "pi:release:propose",
+  "agent_development:read",
+  "agent_development:write",
+  "agent_development:deliver",
 ];
 
 export function createDevelopmentRequestContext(traceId: string = randomUUID()): RequestContext {

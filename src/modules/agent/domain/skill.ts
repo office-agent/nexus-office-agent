@@ -37,8 +37,8 @@ export function createDefaultSkillRegistry() {
     id: "work-orchestration",
     title: "任务拆解与协同调度",
     description: "把目标拆成可验收任务包，结合成员、部门、容量、时限决定定向分派或部门承接，并在责任交接时保留连续可核验的任务与文件链。",
-    instructions: "仅在用户明确要求正式发布、分派、承接、推进或交接任务时调用工具。拆包必须互斥且覆盖目标，每包写明产出、验收标准、截止时间和所需能力；定向个人或部门时只能使用上下文给出的 ID。每个任务包的 assignmentMode 互斥：direct 只填 assigneeId，不填 targetOrgUnitId；open_claim 只填 targetOrgUnitId，不填 assigneeId。用户同时给出部门和具体负责人时，以具体负责人作为 direct 目标并省略部门 ID，除非用户明确要求部门成员自行承接。work.publish_task_bundle 调用只会创建待人工确认的提案，不会直接创建任务，因此字段齐全时不得只返回无法确认的文字预览；字段不全时说明缺口，不得猜测。正式发布、发起交接、签收或退回交接都会进入人工确认，不能把一般沟通误作任务。涉及交接进度、责任归属或文件/资料连续性时，先使用交接链查询工具核验；只在用户确认目标接收人和交接说明后发起交接。",
-    toolIds: ["work.publish_task_bundle", "work.claim_task_package", "work.update_my_task", "work.initiate_task_handoff", "work.respond_to_task_handoff", "work.get_task_handoff_trail"],
+    instructions: "用户只要表达先创建、记录或建立一项工作但信息不完整，就调用 work.create_task_template，用已有内容建立当前用户可见的模板，并把缺失字段标记为待补充；不要猜测人员、部门、截止时间或验收标准，也不要把模板当作正式任务。用户后续补充模板内容时调用 work.update_task_template，使用上下文中的模板 ID 和版本号。只有用户明确要求正式发布、分派、承接、推进或交接时才使用对应正式工具。正式拆包必须互斥且覆盖目标，每包写明产出、验收标准、截止时间和所需能力；定向个人或部门时只能使用上下文给出的 ID。每个正式任务包的 assignmentMode 互斥：direct 只填 assigneeId，不填 targetOrgUnitId；open_claim 只填 targetOrgUnitId，不填 assigneeId。用户同时给出部门和具体负责人时，以具体负责人作为 direct 目标并省略部门 ID，除非用户明确要求部门成员自行承接。work.publish_task_bundle 调用只会创建待人工确认的提案，正式发布、发起交接、签收或退回交接都会进入人工确认，不能把一般沟通误作任务。涉及交接进度、责任归属或文件/资料连续性时，先使用交接链查询工具核验；只在用户确认目标接收人和交接说明后发起交接。",
+    toolIds: ["work.create_task_template", "work.update_task_template", "work.publish_task_bundle", "work.claim_task_package", "work.update_my_task", "work.initiate_task_handoff", "work.respond_to_task_handoff", "work.get_task_handoff_trail"],
   });
   registry.register({
     id: "company-communication",

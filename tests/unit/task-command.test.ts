@@ -61,6 +61,26 @@ describe("real-time task command domain", () => {
     expect(nextPage[0].sequence).toBeGreaterThan(firstPage[1].sequence);
   });
 
+  it("creates incomplete work as a private editable template instead of blocking on missing fields", async () => {
+    const { service, publisher, conversation } = await fixture();
+    const created = await service.createTaskTemplate(publisher, { conversationId: conversation.id, title: "API 申请工作" });
+    expect(created.created).toBe(true);
+    expect(created.templateId).toBe(created.packages[0].id);
+    expect(created.missionId).toBe(created.mission.id);
+    expect(created.mission).toMatchObject({ isTemplate: true, title: "API 申请工作" });
+    expect(created.packages[0]).toMatchObject({ isTemplate: true, assignmentMode: "open_claim", status: "published" });
+    expect(created.packages[0].missingFields).toEqual(expect.arrayContaining(["工作目标", "任务说明", "负责人或承接范围", "截止时间", "验收标准"]));
+    expect((await service.workspace(publisher)).availableTasks).toEqual([]);
+    expect((await service.workspace(publisher)).templates).toHaveLength(1);
+
+    const updated = await service.updateTaskTemplate(publisher, {
+      taskId: created.packages[0].id, expectedVersion: 1, objective: "申请并完成内部 API 访问审批", description: "补齐申请人、用途和访问范围。",
+    });
+    expect(updated.task).toMatchObject({ isTemplate: true, version: 2, description: "补齐申请人、用途和访问范围。" });
+    expect(updated.missingFields).not.toContain("工作目标");
+    expect((await service.workspace(publisher)).templates[0]).toMatchObject({ version: 2, description: "补齐申请人、用途和访问范围。" });
+  });
+
   it("allows exactly one claimant for the same task version", async () => {
     const { service, publisher, conversation } = await fixture();
     const task = (await service.publishMission(publisher, missionInput(conversation.id))).packages[0];

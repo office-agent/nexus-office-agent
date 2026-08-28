@@ -30,6 +30,37 @@ export const publishMissionSchema = z.object({
   })).min(1).max(20),
 }).strict();
 
+export const createTaskTemplateSchema = z.object({
+  conversationId: z.uuid(),
+  title: z.string().trim().min(2).max(160),
+  objective: z.string().trim().min(2).max(1200).optional(),
+  description: z.string().trim().min(2).max(1200).optional(),
+  acceptanceCriteria: z.string().trim().min(2).max(800).optional(),
+  requiredSkills: z.array(z.string().trim().min(1).max(80)).max(12).optional(),
+  assignmentMode: z.enum(["direct", "open_claim"]).optional(),
+  assigneeId: z.uuid().optional(),
+  targetOrgUnitId: z.uuid().optional(),
+  priority: priority.optional(),
+  dueAt: isoDateTime.optional(),
+  capacityPoints: z.number().int().min(1).max(40).optional(),
+}).strict();
+
+export const updateTaskTemplateSchema = z.object({
+  taskId: z.uuid(),
+  expectedVersion: z.number().int().positive(),
+  title: z.string().trim().min(2).max(160).optional(),
+  objective: z.string().trim().min(2).max(1200).optional(),
+  description: z.string().trim().min(2).max(1200).optional(),
+  acceptanceCriteria: z.string().trim().min(2).max(800).optional(),
+  requiredSkills: z.array(z.string().trim().min(1).max(80)).max(12).optional(),
+  assignmentMode: z.enum(["direct", "open_claim"]).optional(),
+  assigneeId: z.uuid().nullable().optional(),
+  targetOrgUnitId: z.uuid().nullable().optional(),
+  priority: priority.optional(),
+  dueAt: isoDateTime.optional(),
+  capacityPoints: z.number().int().min(1).max(40).optional(),
+}).strict();
+
 export const claimPackageSchema = z.object({ expectedVersion: z.number().int().positive() }).strict();
 
 export const transitionPackageSchema = z.object({
@@ -88,6 +119,8 @@ export const appendPoolFeedbackSchema = z.object({
 }).strict();
 
 export type PublishMissionInput = z.infer<typeof publishMissionSchema>;
+export type CreateTaskTemplateInput = z.infer<typeof createTaskTemplateSchema>;
+export type UpdateTaskTemplateInput = z.infer<typeof updateTaskTemplateSchema>;
 export type TransitionPackageInput = z.infer<typeof transitionPackageSchema>;
 export type InitiateTaskHandoffInput = z.input<typeof initiateTaskHandoffSchema>;
 export type RegisterTaskArtifactInput = z.infer<typeof registerTaskArtifactSchema>;

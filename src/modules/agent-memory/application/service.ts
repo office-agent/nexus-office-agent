@@ -91,7 +91,14 @@ export class AgentMemoryService {
   async context(context: RequestContext, input: ContextInput): Promise<AgentMemoryContext> {
     const entries = await this.repository.search(context.tenantId, { query: input.query, limit: 180 });
     const visible = entries.filter((entry) => includesEntry(context, entry, input, true) && entry.classification !== "restricted");
-    const selected = rank(visible, input.query, input.limit ?? 12);
+    const limit = input.limit ?? 12;
+    const recentConversation = input.conversationId
+      ? visible.filter((entry) => entry.tier === "conversation" && entry.scopeId === input.conversationId)
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, Math.min(4, limit))
+      : [];
+    const recentIds = new Set(recentConversation.map(({ id }) => id));
+    const ranked = rank(visible.filter(({ id }) => !recentIds.has(id)), input.query, Math.max(0, limit - recentConversation.length));
+    const selected = [...recentConversation, ...ranked].slice(0, limit);
     const summary = selected.length
       ? ["<untrusted_memory_context>", ...selected.map((entry) => `[${entry.tier}/${entry.kind}/${entry.classification}] ${entry.summary}`), "</untrusted_memory_context>"].join("\n")
       : "<untrusted_memory_context>没有可用的已沉淀记忆。</untrusted_memory_context>";
@@ -99,13 +106,25 @@ export class AgentMemoryService {
     return { summary, citations: selected.map(memoryCitation), entries: selected };
   }
 
-  async captureConversation(context: RequestContext, input: { conversationId: string; runId: string; summary: string; classification?: MemoryClassification }): Promise<AgentMemoryEntry | null> {
-    const classification = input.classification ?? classifyUntrustedText(input.summary);
+  async captureConversation(context: RequestContext, input: {
+    conversationId: string;
+    runId: string;
+    summary?: string;
+    userMessage?: string;
+    assistantMessage?: string;
+    classification?: MemoryClassification;
+  }): Promise<AgentMemoryEntry | null> {
+    const summary = [
+      input.userMessage ? `用户：${input.userMessage.slice(0, 700)}` : "",
+      input.assistantMessage ? `助手：${input.assistantMessage.slice(0, 700)}` : "",
+      input.summary ?? "",
+    ].filter(Boolean).join("\n").slice(0, 1_800);
+    const classification = input.classification ?? classifyUntrustedText(summary);
     if (classification === "restricted") return null;
     return this.repository.save(createMemoryEntry({
       tenantId: context.tenantId, tier: "conversation", kind: "turn", scopeType: "conversation", scopeId: input.conversationId,
       ownerId: context.actorId, visibility: "private", classification,
-      summary: input.summary.slice(0, 1_200),
+      summary,
       attributes: { runId: input.runId }, sourceRefs: [`agent_run:${input.runId}`], sourceType: "agent_run", sourceId: input.runId,
       origin: "conversation", importance: 35, confidence: 100, expiresAt: defaultMemoryExpiry("conversation"), createdBy: context.actorId,
     }));

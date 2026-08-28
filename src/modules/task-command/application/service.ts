@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { RequestContext } from "@/src/platform/context/request-context";
 import type { TaskCommandRepository } from "@/src/modules/task-command/application/contracts";
-import type { AppendPoolFeedbackInput, AppendTaskArtifactVersionInput, InitiateTaskHandoffInput, PublishMissionInput, PublishPoolMessageInput, RegisterTaskArtifactInput, RespondToTaskHandoffInput, TransitionPackageInput } from "@/src/modules/task-command/application/schemas";
-import { claimWorkPackage, createConversationMessage, createMissionBundle, createPoolFeedback, createPoolMessage, createTaskHandoff, handoffWorkPackage, respondToTaskHandoff, transitionWorkPackage, type WorkArtifact, type WorkArtifactVersion, type WorkConversationMessage, type WorkMessageEvent, type WorkMessagePool, type WorkPackage, type WorkTaskEvent, type WorkTaskHandoffArtifactSnapshot } from "@/src/modules/task-command/domain/task-command";
+import type { AppendPoolFeedbackInput, AppendTaskArtifactVersionInput, CreateTaskTemplateInput, InitiateTaskHandoffInput, PublishMissionInput, PublishPoolMessageInput, RegisterTaskArtifactInput, RespondToTaskHandoffInput, TransitionPackageInput, UpdateTaskTemplateInput } from "@/src/modules/task-command/application/schemas";
+import { claimWorkPackage, createConversationMessage, createMissionBundle, createPoolFeedback, createPoolMessage, createTaskHandoff, createTaskTemplateBundle, handoffWorkPackage, respondToTaskHandoff, transitionWorkPackage, type WorkArtifact, type WorkArtifactVersion, type WorkConversationMessage, type WorkMessageEvent, type WorkMessagePool, type WorkPackage, type WorkTaskEvent, type WorkTaskHandoffArtifactSnapshot, type WorkTemplateField } from "@/src/modules/task-command/domain/task-command";
 
 function hasPermission(context: RequestContext, permission: string): boolean {
   const [resource, action] = permission.split(":");
@@ -29,8 +29,42 @@ function canAccessOrgScope(context: RequestContext, orgUnitId: string): boolean 
   );
 }
 
+type TemplateFieldValues = {
+  objective: string;
+  description: string;
+  acceptanceCriteria: string;
+  requiredSkills: string[];
+  assignmentMode: "direct" | "open_claim";
+  assigneeId?: string;
+  targetOrgUnitId?: string;
+  priority: "critical" | "high" | "medium" | "low";
+  dueAt: string;
+  capacityPoints: number;
+};
+
+function updateTemplateMissingFields(current: WorkTemplateField[], input: UpdateTaskTemplateInput, values: TemplateFieldValues): WorkTemplateField[] {
+  const missing = new Set<WorkTemplateField>(current);
+  const has = (key: keyof UpdateTaskTemplateInput) => Object.prototype.hasOwnProperty.call(input, key);
+  const setField = (field: WorkTemplateField, complete: boolean) => { if (complete) missing.delete(field); else missing.add(field); };
+  if (has("objective")) setField("工作目标", Boolean(values.objective && !values.objective.startsWith("待补充")));
+  if (has("description")) setField("任务说明", Boolean(values.description && !values.description.startsWith("待补充")));
+  if (has("acceptanceCriteria")) setField("验收标准", Boolean(values.acceptanceCriteria && !values.acceptanceCriteria.startsWith("待补充")));
+  if (has("requiredSkills")) setField("所需技能", values.requiredSkills.length > 0);
+  if (has("priority")) setField("优先级", Boolean(values.priority));
+  if (has("dueAt")) setField("截止时间", Boolean(values.dueAt));
+  if (has("capacityPoints")) setField("容量点", Boolean(values.capacityPoints));
+  if (has("assignmentMode") || has("assigneeId") || has("targetOrgUnitId")) setField("负责人或承接范围", values.assignmentMode === "direct" ? Boolean(values.assigneeId) : Boolean(values.targetOrgUnitId));
+  return [...missing];
+}
+
 export class TaskCommandService {
   constructor(private readonly repository: TaskCommandRepository) {}
+
+  /** Resolve the user's primary conversation without loading the full workspace. */
+  async primaryConversation(context: RequestContext) {
+    requirePermission(context, "work_task:read");
+    return this.repository.getOrCreatePrimaryConversation(context.tenantId, context.actorId);
+  }
 
   async workspace(context: RequestContext) {
     requirePermission(context, "work_task:read");
@@ -58,9 +92,10 @@ export class TaskCommandService {
       people,
       orgUnits,
       missions: missions.filter((mission) => visible.some((item) => item.missionId === mission.id)),
-      myTasks: visible.filter((item) => item.assigneeId === context.actorId && !["completed", "cancelled"].includes(item.status)),
-      availableTasks: visible.filter((item) => item.assignmentMode === "open_claim" && item.status === "published" && !item.assigneeId),
+      myTasks: visible.filter((item) => item.assigneeId === context.actorId && !item.isTemplate && !["completed", "cancelled"].includes(item.status)),
+      availableTasks: visible.filter((item) => !item.isTemplate && item.assignmentMode === "open_claim" && item.status === "published" && !item.assigneeId),
       publishedByMe: visible.filter((item) => item.publishedBy === context.actorId),
+      templates: visible.filter((item) => item.publishedBy === context.actorId && item.isTemplate),
       handoffTasks: visible.filter((item) => handoffParticipantPackageIds.has(item.id)),
       handoffs: visibleHandoffs,
       pendingHandoffs: visibleHandoffs.filter((item) => item.status === "pending" && item.toAssigneeId === context.actorId).flatMap((handoff) => {
@@ -111,6 +146,61 @@ export class TaskCommandService {
       ...bundle.packages.map((item) => event({ tenantId: context.tenantId, missionId: item.missionId, packageId: item.id, eventType: "package_published", actorId: context.actorId, audience: item.assignmentMode === "open_claim" ? "tenant" : "participants", payload: { title: item.title, assigneeId: item.assigneeId, assignmentMode: item.assignmentMode, version: item.version } })),
     ];
     return this.repository.publishMission(bundle.mission, bundle.packages, events);
+  }
+
+  async createTaskTemplate(context: RequestContext, input: CreateTaskTemplateInput, execution?: { sourceRunId?: string; source?: "human" | "agent" }) {
+    requirePermission(context, "work_task:create");
+    const conversation = await this.repository.getOrCreatePrimaryConversation(context.tenantId, context.actorId);
+    if (conversation.id !== input.conversationId) throw new Error("WORK_CONVERSATION_NOT_FOUND");
+    const bundle = createTaskTemplateBundle({ ...input, tenantId: context.tenantId, publishedBy: context.actorId, source: execution?.source ?? "human", sourceRunId: execution?.sourceRunId });
+    const events: Omit<WorkTaskEvent, "sequence">[] = [
+      event({ tenantId: context.tenantId, missionId: bundle.mission.id, eventType: "mission_published", actorId: context.actorId, audience: "participants", payload: { title: bundle.mission.title, packageCount: bundle.packages.length, template: true, missingFields: bundle.mission.missingFields } }),
+      ...bundle.packages.map((item) => event({ tenantId: context.tenantId, missionId: item.missionId, packageId: item.id, eventType: "package_published", actorId: context.actorId, audience: "participants", payload: { title: item.title, template: true, missingFields: item.missingFields, version: item.version } })),
+    ];
+    const result = await this.repository.publishMission(bundle.mission, bundle.packages, events);
+    const task = result.packages[0];
+    return { ...result, missionId: result.mission.id, templateId: task?.id, task };
+  }
+
+  async updateTaskTemplate(context: RequestContext, input: UpdateTaskTemplateInput) {
+    requirePermission(context, "work_task:update");
+    const current = await this.requirePackage(context.tenantId, input.taskId);
+    if (!current.isTemplate) throw new Error("WORK_TEMPLATE_ONLY");
+    if (current.version !== input.expectedVersion) throw new Error("WORK_PACKAGE_VERSION_CONFLICT");
+    if (current.publishedBy !== context.actorId && !hasPermission(context, "work_task:admin")) throw new Error("POLICY_DENIED:work_task:template_ownership");
+    const missions = await this.repository.listMissions(context.tenantId);
+    const mission = missions.find((item) => item.id === current.missionId);
+    if (!mission) throw new Error("WORK_MISSION_NOT_FOUND");
+    const people = await this.repository.listPeople(context.tenantId);
+    const orgUnits = await this.repository.listOrgUnits(context.tenantId);
+    const assignmentMode = input.assignmentMode ?? current.assignmentMode;
+    const assigneeId = input.assigneeId === null ? undefined : input.assigneeId ?? (assignmentMode === "direct" ? current.assigneeId : undefined);
+    const targetOrgUnitId = input.targetOrgUnitId === null ? undefined : input.targetOrgUnitId ?? (assignmentMode === "open_claim" ? current.targetOrgUnitId : undefined);
+    if (assignmentMode === "direct") {
+      requirePermission(context, "work_task:assign");
+      if (!assigneeId || !people.some(({ id }) => id === assigneeId)) throw new Error("WORK_ASSIGNEE_NOT_FOUND");
+    }
+    if (assignmentMode === "open_claim" && assigneeId) throw new Error("WORK_OPEN_CLAIM_ASSIGNEE_FORBIDDEN");
+    if (targetOrgUnitId) {
+      requirePermission(context, "work_task:assign_department");
+      if (!canAccessOrgScope(context, targetOrgUnitId)) throw new Error("POLICY_DENIED:work_task:target_scope");
+      if (!orgUnits.some(({ id }) => id === targetOrgUnitId)) throw new Error("WORK_TARGET_DEPARTMENT_NOT_FOUND");
+    }
+    const title = input.title ?? current.title;
+    const objective = input.objective ?? mission.objective;
+    const description = input.description ?? current.description;
+    const acceptanceCriteria = input.acceptanceCriteria ?? current.acceptanceCriteria;
+    const requiredSkills = input.requiredSkills ?? current.requiredSkills;
+    const priority = input.priority ?? current.priority;
+    const dueAt = input.dueAt ?? current.dueAt;
+    const capacityPoints = input.capacityPoints ?? current.capacityPoints;
+    const missingFields = updateTemplateMissingFields(current.missingFields, input, { objective, description, acceptanceCriteria, requiredSkills, assignmentMode, assigneeId, targetOrgUnitId, priority, dueAt, capacityPoints });
+    const timestamp = new Date().toISOString();
+    const nextMission = { ...mission, title, objective, priority, dueAt, version: mission.version + 1, updatedAt: timestamp, missingFields };
+    const nextPackage = { ...current, title, description, acceptanceCriteria, requiredSkills: [...new Set(requiredSkills)], assignmentMode, assigneeId, targetOrgUnitId, priority, dueAt, capacityPoints, version: current.version + 1, updatedAt: timestamp, missingFields };
+    const changed = await this.repository.updateTaskTemplate({ currentMission: mission, nextMission, currentPackage: current, nextPackage, expectedVersion: input.expectedVersion, event: event({ tenantId: context.tenantId, missionId: current.missionId, packageId: current.id, eventType: "package_status_changed", actorId: context.actorId, audience: "participants", payload: { template: true, missingFields, version: nextPackage.version } }) });
+    if (!changed) throw new Error("WORK_PACKAGE_VERSION_CONFLICT");
+    return { mission: nextMission, task: nextPackage, missingFields };
   }
 
   async claimPackage(context: RequestContext, id: string, expectedVersion: number) {
@@ -355,6 +445,7 @@ export class TaskCommandService {
     const workspace = await this.workspace(context);
     const people = workspace.people.map((person) => `${person.displayName}[${person.id}]：在手 ${person.activeTaskCount} 项${person.positionName ? `，${person.positionName}` : ""}`).join("；") || "没有可分派成员";
     const myTasks = workspace.myTasks.slice(0, 8).map((item) => `${item.title}[${item.id}]，${item.status}，v${item.version}`).join("；") || "无";
+    const templates = workspace.templates.slice(0, 8).map((item) => `${item.title}[${item.id}]，模板，待补充：${item.missingFields.join("、") || "无"}，v${item.version}`).join("；") || "无";
     const available = workspace.availableTasks.slice(0, 8).map((item) => `${item.title}[${item.id}]，v${item.version}`).join("；") || "无";
     const departments = workspace.orgUnits.map((unit) => `${unit.name}[${unit.id}]`).join("；") || "无";
     const pools = workspace.messagePools.map((pool) => `${pool.name}[${pool.key}]：${pool.messages.slice(0, 2).map((item) => `${item.subject}[${item.id}]`).join("、") || "暂无消息"}`).join("；") || "当前无可见消息池";
@@ -362,8 +453,8 @@ export class TaskCommandService {
     const handoffTrail = workspace.handoffs.slice(-8).map((item) => `${item.snapshot.title}[${item.packageId}]：${item.fromAssigneeId} → ${item.toAssigneeId}，${item.status}，冻结交付物 ${item.artifactSnapshots.length} 项${item.artifactRefs.length ? `，旧式引用 ${item.artifactRefs.length} 项` : ""}`).join("；") || "无";
     return {
       conversationId: workspace.conversation.id,
-      summary: `<untrusted_task_context>\n主对话ID：${workspace.conversation.id}\n可分派成员：${people}\n可定向部门：${departments}\n我的进行中任务：${myTasks}\n可主动承接任务：${available}\n待我签收的交接：${pendingHandoffs}\n可见交接链：${handoffTrail}\n</untrusted_task_context>\n<untrusted_message_pool_context>\n可见消息池：${pools}\n</untrusted_message_pool_context>`,
-      packages: [...workspace.myTasks, ...workspace.availableTasks].slice(0, 12),
+      summary: `<untrusted_task_context>\n主对话ID：${workspace.conversation.id}\n可分派成员：${people}\n可定向部门：${departments}\n我的进行中任务：${myTasks}\n我的任务模板：${templates}\n可主动承接任务：${available}\n待我签收的交接：${pendingHandoffs}\n可见交接链：${handoffTrail}\n</untrusted_task_context>\n<untrusted_message_pool_context>\n可见消息池：${pools}\n</untrusted_message_pool_context>`,
+      packages: [...workspace.myTasks, ...workspace.availableTasks, ...workspace.templates].slice(0, 12),
       handoffs: workspace.handoffs.slice(-12),
       poolMessages: workspace.messagePools.flatMap((pool) => pool.messages).slice(0, 12),
     };

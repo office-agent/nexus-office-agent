@@ -18,6 +18,15 @@ export function applicationErrorResponse(error: unknown): NextResponse {
   }
 
   const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
+  if (code === "ACCESS_DENIED") {
+    return NextResponse.json({ error: { code, message: "当前身份无权访问 Agent 开发工作流。" } }, { status: 403 });
+  }
+  if (code === "AGENT_DEVELOPMENT_PROJECT_NOT_FOUND") {
+    return NextResponse.json({ error: { code, message: "Agent 开发项目不存在或不属于当前租户。" } }, { status: 404 });
+  }
+  if (["AGENT_DEVELOPMENT_ARCHIVE_INCOMPLETE", "AGENT_DEVELOPMENT_REQUIREMENT_ARCHIVE_REQUIRED", "AGENT_DEVELOPMENT_VERSION_REQUIRED", "AGENT_DEVELOPMENT_VERSION_EVIDENCE_REQUIRED", "AGENT_DEVELOPMENT_TEST_GATE_REQUIRED", "AGENT_DEVELOPMENT_ALREADY_DELIVERED", "AGENT_DEVELOPMENT_VERSION_NAME_CONFLICT", "AGENT_DEVELOPMENT_VERSION_NOT_FOUND", "AGENT_DEVELOPMENT_VERSION_CONFLICT", "AGENT_DEVELOPMENT_IDEMPOTENCY_CONFLICT"].includes(code)) {
+    return NextResponse.json({ error: { code, message: "上一阶段尚未完成留档，当前操作已被工作流门禁阻止。" } }, { status: 409 });
+  }
   if (code.startsWith("POLICY_DENIED:")) {
     return NextResponse.json({ error: { code: "ACCESS_DENIED", message: "当前身份无权执行此操作。" } }, { status: 403 });
   }
@@ -117,6 +126,9 @@ export function applicationErrorResponse(error: unknown): NextResponse {
   }
   if (["WORK_PACKAGE_VERSION_CONFLICT", "WORK_PACKAGE_NOT_CLAIMABLE", "WORK_MISSION_CONFLICT"].includes(code)) {
     return NextResponse.json({ error: { code, message: "任务已被他人承接、版本已变化或当前状态不允许该操作。" } }, { status: 409 });
+  }
+  if (code === "WORK_TEMPLATE_ONLY") {
+    return NextResponse.json({ error: { code, message: "只有任务模板可以在模板入口直接修改；正式任务请走正式状态变更流程。" } }, { status: 422 });
   }
   if (["INTEGRATION_CONNECTION_NOT_ACTIVE", "TEST_NOTIFICATION_PROPOSAL_STATE_CONFLICT", "TEST_NOTIFICATION_PROPOSAL_CONFLICT"].includes(code)) {
     return NextResponse.json({ error: { code, message: "连接或确认对象的当前状态不允许该操作。" } }, { status: 409 });

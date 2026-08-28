@@ -7,6 +7,7 @@ export type WorkMissionStatus = "active" | "completed" | "cancelled";
 export type WorkPackageStatus = "published" | "assigned" | "claimed" | "in_progress" | "blocked" | "in_review" | "completed" | "cancelled";
 export type WorkTaskHandoffStatus = "pending" | "accepted" | "rejected";
 export type WorkArtifactStatus = "active" | "revoked";
+export type WorkTemplateField = "工作目标" | "任务说明" | "负责人或承接范围" | "截止时间" | "验收标准" | "优先级" | "容量点" | "所需技能";
 
 export type WorkConversation = {
   id: string;
@@ -58,6 +59,8 @@ export type WorkMission = {
   publishedBy: string;
   source: "human" | "agent";
   sourceRunId?: string;
+  isTemplate: boolean;
+  missingFields: WorkTemplateField[];
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -76,6 +79,8 @@ export type WorkPackage = {
   assigneeId?: string;
   targetOrgUnitId?: string;
   publishedBy: string;
+  isTemplate: boolean;
+  missingFields: WorkTemplateField[];
   priority: WorkPriority;
   dueAt: string;
   capacityPoints: number;
@@ -260,7 +265,11 @@ export function createMissionBundle(input: {
     priority: WorkPriority;
     dueAt: string;
     capacityPoints: number;
+    isTemplate?: boolean;
+    missingFields?: WorkTemplateField[];
   }>;
+  isTemplate?: boolean;
+  missingFields?: WorkTemplateField[];
 }, now = new Date()): { mission: WorkMission; packages: WorkPackage[] } {
   if (input.packages.length === 0) throw new Error("WORK_PACKAGES_REQUIRED");
   const timestamp = now.toISOString();
@@ -268,6 +277,7 @@ export function createMissionBundle(input: {
     id: randomUUID(), tenantId: input.tenantId, conversationId: input.conversationId, projectId: input.projectId,
     title: input.title, objective: input.objective, priority: input.priority, dueAt: input.dueAt, status: "active",
     publishedBy: input.publishedBy, source: input.source, sourceRunId: input.sourceRunId, version: 1, createdAt: timestamp, updatedAt: timestamp,
+    isTemplate: input.isTemplate ?? false, missingFields: [...new Set(input.missingFields ?? [])],
   };
   const packages = input.packages.map((item, index): WorkPackage => {
     if (item.assignmentMode === "direct" && !item.assigneeId) throw new Error("WORK_ASSIGNEE_REQUIRED");
@@ -278,12 +288,55 @@ export function createMissionBundle(input: {
       title: item.title, description: item.description, acceptanceCriteria: item.acceptanceCriteria,
       requiredSkills: [...new Set(item.requiredSkills)], assignmentMode: item.assignmentMode, assigneeId: item.assigneeId,
       targetOrgUnitId: item.targetOrgUnitId,
-      publishedBy: input.publishedBy, priority: item.priority, dueAt: item.dueAt, capacityPoints: item.capacityPoints,
+      publishedBy: input.publishedBy, isTemplate: item.isTemplate ?? input.isTemplate ?? false, missingFields: [...new Set(item.missingFields ?? input.missingFields ?? [])], priority: item.priority, dueAt: item.dueAt, capacityPoints: item.capacityPoints,
       status: item.assignmentMode === "direct" ? "assigned" : "published", evidenceRefs: [], version: 1,
       createdAt: timestamp, updatedAt: timestamp,
     };
   });
   return { mission, packages };
+}
+
+export function createTaskTemplateBundle(input: {
+  tenantId: string;
+  conversationId: string;
+  title: string;
+  objective?: string;
+  description?: string;
+  acceptanceCriteria?: string;
+  requiredSkills?: string[];
+  assignmentMode?: AssignmentMode;
+  assigneeId?: string;
+  targetOrgUnitId?: string;
+  priority?: WorkPriority;
+  dueAt?: string;
+  capacityPoints?: number;
+  publishedBy: string;
+  source: WorkMission["source"];
+  sourceRunId?: string;
+}, now = new Date()): { mission: WorkMission; packages: WorkPackage[] } {
+  const missingFields: WorkTemplateField[] = [];
+  const objective = input.objective?.trim() || `待补充“${input.title.trim()}”的工作目标`;
+  const description = input.description?.trim() || "待补充任务说明";
+  const acceptanceCriteria = input.acceptanceCriteria?.trim() || "待补充验收标准";
+  const requiredSkills = [...new Set(input.requiredSkills?.map((item) => item.trim()).filter(Boolean) ?? [])];
+  const assignmentMode: AssignmentMode = input.assignmentMode === "direct" && !input.assigneeId ? "open_claim" : input.assignmentMode ?? "open_claim";
+  const priority = input.priority ?? "medium";
+  const dueAt = input.dueAt ?? new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const capacityPoints = input.capacityPoints ?? 1;
+  if (!input.objective?.trim()) missingFields.push("工作目标");
+  if (!input.description?.trim()) missingFields.push("任务说明");
+  if (!input.acceptanceCriteria?.trim()) missingFields.push("验收标准");
+  if (!input.assignmentMode || (assignmentMode === "direct" && !input.assigneeId) || (assignmentMode === "open_claim" && !input.targetOrgUnitId)) missingFields.push("负责人或承接范围");
+  if (!input.dueAt) missingFields.push("截止时间");
+  if (!input.priority) missingFields.push("优先级");
+  if (!input.capacityPoints) missingFields.push("容量点");
+  if (!requiredSkills.length) missingFields.push("所需技能");
+  return createMissionBundle({
+    tenantId: input.tenantId, conversationId: input.conversationId, title: input.title.trim(), objective,
+    priority, dueAt, publishedBy: input.publishedBy, source: input.source, sourceRunId: input.sourceRunId, isTemplate: true, missingFields,
+    packages: [{ title: input.title.trim(), description, acceptanceCriteria, requiredSkills, assignmentMode, assigneeId: assignmentMode === "direct" ? input.assigneeId : undefined,
+      targetOrgUnitId: assignmentMode === "open_claim" ? input.targetOrgUnitId : undefined, priority, dueAt, capacityPoints, isTemplate: true, missingFields }],
+  }, now);
 }
 
 export function createPoolMessage(input: Omit<WorkPoolMessage, "id" | "createdAt">, now = new Date()): WorkPoolMessage {

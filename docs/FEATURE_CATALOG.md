@@ -1,6 +1,6 @@
 # 公开功能清单
 
-更新时间：2026-08-20
+更新时间：2026-08-26
 项目：Nexus Office Agent / 枢纽统一办公平台 Agent
 公开版本基线：`0.14.0-work-command-center`
 
@@ -18,6 +18,7 @@
 |---|---|---|---|
 | 企业工作台 | `app/`、`components/` | 本地实现 | 浏览器只负责对话、视图和交互，不持有模型、Git 或企业凭据 |
 | 工作指挥中枢 | `components/pi-coding-workbench.tsx`、`src/modules/task-command/` | 本地实现 | 任务拆包、分派、承接、状态和证据均受服务端权限约束 |
+| Agent 开发 | `components/agent-development-workflow.tsx`、`src/modules/agent-development/` | 本地实现 | 需求五文档留档后才开放开发；主要版本必须保留 diff、功能清单和通过的功能测试才能交付 |
 | 企业领域模型 | `src/modules/`、`src/platform/` | 本地实现 | 目标、项目、任务、风险、问题、决策、行动和证据共享租户上下文 |
 | 身份与多租户 | `src/platform/identity/`、`src/platform/context/`、数据库 RLS 迁移 | 控制面实现 | 生产必须接入权威 IdP、PostgreSQL RLS 和组织授权事实源 |
 | Agent Runtime | `src/modules/pi-agent/`、`scripts/build-pi-runner.mjs` | 控制面实现 | Pi 在独立 Runner 设计中运行，Web 进程不直接执行 Pi |
@@ -60,6 +61,7 @@
 - [设计文档索引](./README.md)
 - [开源交接手册](./OPEN_SOURCE_HANDOFF.md)
 - [Agent Runtime 设计](./23-pi-agent-enterprise-runtime.md)
+- [Agent 开发工作流](./24-agent-development-workflow.md)
 - [安全与权限](./07-security-and-permissions.md)
 - [测试与验收](./09-testing-and-acceptance.md)
 - [需求追踪](./15-requirement-traceability.md)
