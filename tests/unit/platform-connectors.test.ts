@@ -93,6 +93,31 @@ describe("platform connector contracts", () => {
     await expect(router.deliver(request)).resolves.toMatchObject({ status: "unknown" });
   });
 
+  it("falls back to the next channel after a known primary rejection", async () => {
+    const registry = new ConnectorRegistry();
+    const control = new InMemoryConnectorControlPlane();
+    const rejected = new FixtureTransport({ status: 400, body: { code: 40001 } });
+    const fallback = new FixtureTransport({ status: 200, body: { processQueryKey: "ding-fallback-message" } });
+    registry.register(new FeishuConnector(rejected, control));
+    registry.register(new DingtalkConnector(fallback, control));
+    const router = new NotificationRouter(registry, new InMemoryNotificationDeliveryStore());
+
+    const result = await router.deliver({
+      id: "notification-fallback",
+      tenantId: "tenant-a",
+      userId: "user-a",
+      message: { type: "info", text: "hello" },
+      providers: [
+        { provider: "feishu", connectionId: "connection-f", externalUserId: "ou-1" },
+        { provider: "dingtalk", connectionId: "connection-d", externalUserId: "staff-1" },
+      ],
+    });
+
+    expect(result).toMatchObject({ status: "delivered", provider: "dingtalk", receipt: { externalMessageId: "ding-fallback-message" } });
+    expect(rejected.requests).toHaveLength(1);
+    expect(fallback.requests).toHaveLength(1);
+  });
+
   it("caches access tokens and injects provider-specific authentication", async () => {
     const requests: Array<{ url: string; headers?: Record<string, string> }> = [];
     const credentials: OutgoingCredentialSource = { async resolve(_connectionId, provider) { return provider === "feishu" ? { provider, appId: "fixture-app", appSecret: "fixture-secret" } : provider === "dingtalk" ? { provider, clientId: "fixture-client", clientSecret: "fixture-secret" } : { provider, corpId: "fixture-corp", appSecret: "fixture-secret", agentId: "1000002" }; } };

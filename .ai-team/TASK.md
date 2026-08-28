@@ -1,82 +1,94 @@
 # Current Task
 
-- ID: `P06`
-- Title: `企业与管理智能验证与数据质量补强`
+- ID: `P07`
+- Title: `企业协作平台集成验证与回调可靠性补强`
 - Status: `handoff`
-- Owner: `P06`
-- Next owner: `P07`
+- Owner: `P07`
+- Next owner: `P08`
 
 ## Goal
 
-依据企业管理、管理智能、权限安全和 API 契约文档，验证并补强企业与管理智能能力，使指标口径、来源和质量状态可追溯，且数据质量能明确影响管理分析；同时保留管理节奏、组合情景、企业事项和 AI 治理的既有安全边界与自动化证据。
+梳理并验证企业微信、飞书和钉钉统一 Connector 的协议安全、可信租户绑定、外部身份映射、事件幂等及通知投递能力；补强合法 HTTP 回调在跨请求和并发重投时的持久化防重放语义，并分别记录本地、模拟或测试环境及真实平台联调证据。
 
 ## Acceptance scenarios
 
-- [x] 指标定义、权威来源、定位、新鲜度 SLA、允许/禁止用途和更新时间可从工作区与 API 追溯。
-- [x] 缺失、过期、待核验数据均显式显示为相应质量状态，并实际影响管理例外摘要和会前分析。
-- [x] 管理节奏、组合情景的假设/项目动作/容量/收益/成本/风险/证据，以及人工版本化选择均保持可复核。
-- [x] 企业事项的来源、责任、SLA、状态迁移和证据链，以及 AI 治理的小样本/未知结果边界均保持受测。
-- [x] P06 聚焦单元、API、PostgreSQL、类型、Lint、构建和仓库同步检查已执行并如实记录结果或既有基线阻塞。
+- [x] 三平台统一 Connector、能力矩阵、HTTP/Stream 差异和运行调用链已梳理并与设计契约一致。
+- [x] 飞书、钉钉和企业微信的签名、时间窗、Verification Token/ReceiveId、消息解密和安全 ACK 均具备自动化证据。
+- [x] 回调只使用服务端已有的租户、连接、平台和 Secret 绑定；外部身份只有在同范围内为 `verified` 时才可进入当前权限上下文。
+- [x] 合法回调的重复和并发投递只产生一次持久化接收，重复回调仍返回平台成功 ACK；业务 Inbox 幂等继续作为独立保护层。
+- [x] 测试通知的预检、短时提案、人工确认与结果记录，以及业务通知的全局去重、限流重试、失败和未知结果状态均完成验证。
+- [x] 本地验证、模拟或测试环境验证、外部真实平台验证状态已分开记录；聚焦测试和仓库门禁已如实执行。
 
 ## Invariants
 
-- 保持租户隔离、服务端权限校验、数据范围过滤和失败关闭；不得信任请求体自报的租户或操作者。
-- 管理分析严格区分事实、推断和需要人工决定的提案；不得把 AI 输出或缺失/失鲜数据包装为正式健康结论。
-- 所有写操作继续使用对象版本或 compare-and-set；组合选择同一组合只能有一个当前选定方案并保留历史。
-- 指标、情景、事项和 AI 治理只保存设计要求的可审计摘要，不引入原始敏感提示、完整模型响应或人才私密数据。
-- 不修改无关的 Pi Agent、连接器、部署、身份权限或企业治理模块；不处理 P03 已记录的全仓基线问题。
-- 不伪造测试结果，不提交密钥、私人数据、运行产物或私有 Session 文件。
+- 租户、连接、平台、操作者和权限均由服务端可信记录解析；请求中的 `tenant_id` 只作为兼容路由提示，不能成为授权事实。
+- 回调必须先校验连接绑定、时间窗、签名、Token/ReceiveId 和密文，再持久化 replay 摘要；无效请求不得占用 replay 或 Inbox 状态。
+- 合法重复回调返回平台要求的成功 ACK，但不得重复写入 Inbox 或触发业务副作用。
+- Callback replay 与业务事件 Inbox 幂等职责分离；前者识别同一传输回调，后者识别同一标准化业务事件。
+- 外部身份的 `candidate`、`conflict`、`not_found` 和 `revoked` 状态全部失败关闭；映射成功后仍重新解析内部用户的当前权限。
+- 通知的 `delivered`、`retry_scheduled`、`failed` 和 `unknown` 必须持久化；未知结果停止自动重试并等待人工核对。
+- 数据库变更必须提供前向迁移、兼容和回退说明，继续使用强制 RLS，不保存回调正文、解密正文或任何 Secret。
+- 不修改 Pi Agent、任务指挥中心、通用 Agent 编排或其他成员负责的业务模块；不伪造真实平台验证结果。
 
 ## Decisions
 
-- P05 已由 PR #4 合并为提交 `d3d0fec`；P06 从最新 `main` 创建分支 `codex/p06-enterprise-management-intelligence` 并接棒。
-- P06 范围限定为 `src/modules/enterprise-intelligence`、`src/modules/management-intelligence`、`src/modules/strategy`、`src/modules/talent` 及其直接 API、测试和必要文档。
-- 开发环境使用 lockfile 安装的依赖和内存/PGlite fixture；公开仓库继续禁用 VibeCollab Private Session、Hook 与任何真实凭据。真实模型、PostgreSQL 和企业微信凭据仍只属于本机或部署 Secret 管理。
-- 质量状态以同一条最新检查解释；无检查的受管指标在工作区、例外摘要和会前事实中均为 `missing`。例外摘要单列失鲜/缺失和 `unverified`，避免把待核验数据混同为健康或过期。
-- 多条质量检查以 `checkedAt` 为主、ID 为确定性并列规则选择最新项；PostgreSQL/PGlite 回归覆盖同一检查时间的稳定结果。
-- 新建组合情景必须只引用该组合已纳入的项目；服务层与内存/PostgreSQL 仓储均执行同一成员范围校验，避免把同租户但组合外项目写入情景。
-- 当前仓库未启用 `.ai-team/session-policy.json`，`session.mjs validate` 明确报告 `enabled: false`。这不构成原方案 Private 会话采集证据，P07 不得将其误报为已启用。
+- P06 已由 PR #5 合并为提交 `0f6ca30`；任务仓库随后合入原始仓库提交，P07 从 `main` 的 `4c3216c` 创建分支 `p07-企业协作平台集成`。
+- 保留现有回调 URL 的 `tenant_id` 兼容性，本轮通过数据库连接组合匹配、失败关闭及使用连接记录中的可信 tenant 继续处理来证明绑定，不引入绕过 RLS 的全局连接查询。
+- 合法 duplicate 属于幂等结果，不属于认证失败：飞书、钉钉和企业微信继续收到各自协议要求的成功 ACK。
+- 在 `WebhookIngressService.receive()` seam 验证回调行为，在 replay store interface 验证持久化原子性；数据库测试使用 PGlite，只有三方平台网络使用 mock adapter。
+- Replay fingerprint 由服务端根据版本、平台、连接、平台时间戳、nonce、签名和原始正文摘要计算；只在协议校验成功后 claim，数据库不保存原文。
+- 复用 `0004_connector_platform.sql` 已有的 `webhook_replay_claims`、过期索引和强制 RLS，不新增或修改 Schema；P07 只补齐此前缺失的应用 adapter、运行时接线与自动化证据。
+- 采用 red → green 垂直切片：先复现两个独立 `receive()` 调用的重复投递，再实现最小内存 adapter，随后接入既有 PostgreSQL replay 表并增加并发/隔离证据。
+- 公开仓库继续禁用 VibeCollab Private Session；不存在 `.ai-team/session-policy.json` 时不得声称已采集私有会话证据。
 
 ## Completed
 
-- 已确认本地 `main` 与 `origin/main` 一致，P05 合并提交为 `d3d0fec`，接棒前工作区为 clean。
-- 已创建 P06 分支 `codex/p06-enterprise-management-intelligence`。
-- 已阅读共享项目、任务与协作规范，P06 测试方案，管理智能/需求追踪设计文档，以及当前 Next.js 环境变量和 Route Handler 约定。
-- 已执行 `npm ci`；依赖按 lockfile 成功安装。npm 报告 2 个已有审计问题（1 moderate、1 high），未执行自动升级或修复。
-- 已完成初步领域、应用服务、仓储、API 与测试盘点，确认管理节奏、指标语义、组合情景、企业事项和 AI 治理已有实现与回归覆盖。
-- 工作区现在将没有质量检查的受管指标计入失鲜/缺失例外；待核验指标单列为 `unverifiedMetrics`，前端摘要和指标徽标均显式呈现状态。
-- 会前事实包使用相同的最新质量解释，并扩展情景事实以保留假设、适用组合/项目、动作、容量、收益、成本、风险和证据引用。
-- 组合情景创建前验证每个项目属于指定组合；相关内存/PostgreSQL 实现继续以租户范围和 RLS 执行查询。
-- 已更新管理智能设计规则及行为证据映射；PGlite 回归覆盖 missing、unverified、stale、同时间戳确定性选择和组合外项目拒绝。
-- P06 聚焦回归：`tests/unit/management-intelligence.test.ts`、`tests/integration/management-intelligence-api.test.ts`、`tests/integration/postgres-management-intelligence.test.ts`、`tests/requirement-traceability.test.ts` 共 4 个文件、16 项测试通过。
+- 已确认 P06 实际合并状态与过期 TASK Pending 的差异；当前 P07 基线 `4c3216c` 与 `main`、`origin/main` 一致，接棒前工作区 clean。
+- 已创建并检出分支 `p07-企业协作平台集成`。
+- 已阅读 AGENTS、PROJECT、TASK、共享协作规范、连接器设计及当前 Next.js Route Handler 指南，并确认 P07 测试 seam。
+- 已执行 `npm ci`；按 lockfile 安装 610 个包并审计 611 个包，报告 1 个 moderate 和 1 个 high 既有依赖问题，未执行自动修复。
+- 已梳理统一 Connector、三平台 verifier/normalizer、Webhook ingress、外部身份 control plane、Inbox、通知路由和接入验收控制面。
+- P07 初始聚焦基线共 11 个测试文件、45 项测试通过；现有测试尚未覆盖两个独立 ingress 调用或并发进程请求的持久 replay claim。
+- 已新增 callback replay interface、内存与 PostgreSQL adapters，并在真实 Route Handler 中接入 `0004` 已有的租户隔离 replay 表；fingerprint 只保存协议字段和正文摘要。
+- 已修复跨请求/多实例重复回调：三平台合法 duplicate 保持成功 ACK，并通过稳定首次接收时间使无平台 event ID 的事件仍获得确定性 Inbox 幂等。
+- 已覆盖 replay 已落库但 Inbox 首次失败的崩溃窗口：平台重试会继续尝试 Inbox，只有 Inbox 已存在时才报告 duplicate，避免事件丢失。
+- 已验证 PostgreSQL 并发 claim 只有一个 accepted、过期摘要可清理、duplicate 返回首次接收时间，且租户/连接/平台绑定精确匹配。
+- 已补齐 `candidate`、`conflict`、`not_found` 和 `revoked` 外部身份失败关闭证据；真实 Worker 回归证明 verified 用户仍从权威库重新解析当前权限后执行渠道动作。
+- 已回归测试通知的预检、短时提案、同一管理员确认、收件人摘要和 unknown 停止重试，以及业务通知去重、429 重试、可靠回执与主渠道明确失败后的备用渠道降级。
+- 已同步连接器、安全、事件契约和需求追踪文档，明确 HTTP replay 与业务 Inbox 幂等的职责及失败恢复顺序。
+- P07 最终聚焦回归共 15 个测试文件、78 项通过；Lint 与差异检查通过，生产构建完成代码编译后仅被已知范围外类型基线阻断。
 
 ## Pending
 
-- P06 代码与 TASK 已到可合并检查点；待推送并通过 PR 后由 P07 接棒。当前环境的 GitHub CLI 令牌失效且无法解析 GitHub，不能在本轮创建/更新远端 PR。
-- 全仓 `typecheck` 仍只报告 P03 已记录的 3 个 Task Command Artifact Route 模块缺失；构建在编译成功后因环境中的 TypeScript `--showConfig` 解析异常而 `exit 134`。
-- 全量 `npm test` 在输出多项已知 Pi/Task Command 范围外失败后未自行结束，被人工中止为 `exit 130`；不得把它表示为通过。P10 应在具备 Pi 运行时/稳定测试环境时重新取得完整全量汇总。
-- 真实模型、真实 PostgreSQL、三方企业平台和生产运行时仍属于外部验证 Gate；P07 负责记录连接器本地模拟、接口测试和真实平台联调状态。
+- 外部真实平台验证：当前没有飞书、钉钉和企业微信测试企业、应用凭据、受管 Secret 或可审计联调窗口，三平台安装、身份、事件、消息和故障恢复联调均为 `blocked`；本轮没有将本地 fixture 或 PGlite 结果冒充外部通过。
+- 全仓 `typecheck` 和 `build` 仍被上游合并后的 3 个 Task Command Artifact Route 缺失及 3 个 `agent-native-tool-routing` 调用参数错误阻断；P07 代码编译和聚焦测试未出现错误，相关基线由对应成员或 P10 汇总处理。
+- `npm ci` 报告 1 moderate、1 high 既有依赖审计问题，未执行可能改变依赖行为的自动修复。
+- P07 提交和 PR 合并后由 P08 接棒；P10 最终在具备稳定全仓环境和外部 Gate 证据时执行全量回归。
 
 ## Next step
 
-P07 在 P06 PR 合并后从最新 `main` 创建分支，先阅读项目与任务上下文；随后从 `src/modules/integration` 的统一 Connector、外部身份映射和事件入口开始，验证企业微信、飞书和钉钉的签名/时间窗/解密、租户解析、幂等投递和测试通知状态，并把本地、模拟与真实平台证据分别写入 TASK。
+P08 从 `app/api/agent/route.ts`、`app/api/v1/agent` 和 `src/modules/agent` 的请求入口开始，使用 P07 已验证的可信租户、外部身份和当前权限上下文，梳理模型网关、Tool/Skill Registry、经营管理查询工具、异常结果及 R3 提案人工确认链路；保持 Pi Agent 专项在范围外。
 
 ## Verification
 
-- [x] P05 合并检查：本地 `main` 与 `origin/main` 均位于 `d3d0fec`。
-- [x] `npm ci`：exit 0；安装 611 个包；报告 2 个已有依赖审计问题，未执行自动修复。
-- [x] P06 聚焦单元、API、PostgreSQL、需求追踪回归：exit 0；4 个测试文件、16 项通过。
-- [x] `npm run typecheck`：exit 2；仅报告 P03 已记录的 3 个 `task-command/artifacts` Route 模块缺失，未出现 P06 类型错误。
+- [x] `npm ci`：exit 0；安装 610 个包，审计 611 个包；报告 1 moderate、1 high，未自动修复。
+- [x] P07 初始聚焦回归：exit 0；11 个测试文件、45 项通过。
+- [x] `node .ai-team/check.mjs --base origin/main`（接棒前）：exit 0，P06 handoff valid、Private sessions disabled。
+- [x] `node .ai-team/session.mjs validate`（接棒前）：exit 0，`enabled: false`、无错误。
+- [x] P07 replay/安全/身份/通知聚焦回归：exit 0；15 个测试文件、78 项通过，包含本地 fixture、Route/application 模拟、PGlite/PostgreSQL adapter 和真实 Worker 路径。
+- [x] `npm run typecheck`：exit 1；仅报告 3 个 Task Command Artifact Route 缺失和 3 个 `agent-native-tool-routing` 参数错误，未报告 P07 文件错误。
 - [x] `npm run lint`：exit 0。
-- [x] `npm test`：命令已执行但未自行收尾；输出后被人工中止为 exit 130。中止前报告 `firecracker-backend`（4）、`pi-resource-materializer`（1）、`task-command-api`（0 tests，缺失 Route）、`pi-sandbox-supervisor`（2）、`pi-workspace-supervisor-object`（2）和 `pi-workspace-supervisor-http`（3）等范围外失败；没有把不完整结果当作通过。
-- [x] `npm run build`：exit 134；优化生产编译成功，随后 TypeScript `--showConfig` 解析输出失败并 core dump，未出现 P06 编译错误。
-- [x] `git diff --check`：exit 0。
-- [x] `node .ai-team/check.mjs --base origin/main`：exit 0，更新状态前结果 valid、Private sessions disabled；交接状态更新后需在提交前复跑。
+- [x] `npm run build`：exit 1；Next.js 生产代码编译成功，TypeScript 阶段被与 typecheck 相同的 6 个范围外基线错误阻断。
+- [x] `git diff --check`：exit 0；仅输出仓库行尾转换提示，无空白错误。
+- [x] 本地验证：三平台加密 fixture、replay/Inbox 故障恢复、身份状态、通知状态与需求追踪通过。
+- [x] 模拟或测试环境验证：PGlite replay 原子 claim/RLS 兼容、接入验收仓储、Worker 当前权限解析和通知持久化通过。
+- [x] 外部真实环境验证：`blocked`；缺少三平台测试企业、凭据、受管 Secret 和联调窗口，未执行真实消息副作用。
+- [x] `node .ai-team/check.mjs --base origin/main`：exit 0；P07 handoff、6/6 验收、Private sessions disabled，结果 valid。
 - [x] `node .ai-team/session.mjs validate`：exit 0，`enabled: false`、无错误；不是 Private Session 验收。
-- [x] `node .ai-team/session.mjs report`：exit 0，0 个 session、Private sessions disabled。
+- [x] `node .ai-team/session.mjs report`：exit 0；0 个 session，Private sessions disabled。
 
 ## Handoff note
 
-- From: `P06`
-- To: `P07`
-- Summary: P06 已完成指标质量与管理分析的一致性补强：missing/unverified/stale 在工作区摘要和会前事实中可追溯，组合情景受组合项目范围约束，情景事实保留可复核的假设、动作与证据。P06 聚焦 16 项回归、Lint、差异和仓库同步检查通过；全仓 TypeScript、测试与构建的真实范围外/环境阻塞已如实记录。P07 从统一 Connector 与事件入口继续，不重做 P06 范围。
+- From: `P07`
+- To: `P08`
+- Summary: P07 已完成三平台统一 Connector、协议安全、可信绑定、外部身份、事件幂等与通知状态验收，并把既有 PostgreSQL replay 表接入真实回调入口。跨请求和并发 duplicate 返回安全 ACK 且只保留一个 Inbox 事件；replay 与 Inbox 之间的失败窗口可恢复。聚焦 78 项测试、Lint 和代码编译通过，6 个全仓类型基线错误及真实三平台联调 blocked 已如实记录。P08 从通用 Agent 请求入口继续验证上下文、工具和确认机制。
