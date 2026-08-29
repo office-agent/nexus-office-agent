@@ -63,6 +63,15 @@ describe("Agent orchestrator", () => {
     expect(run.output?.citations.length).toBeGreaterThan(0);
   });
 
+  it("degrades with a clear result when the provider itself is unavailable", async () => {
+    const unavailable: ModelGateway = { async complete() { throw new Error("MODEL_PROVIDER_UNAVAILABLE"); } };
+    const { orchestrator } = fixture(unavailable);
+    const run = await orchestrator.createRun(createDevelopmentRequestContext(), { message: "总结风险" });
+    expect(run.status).toBe("succeeded");
+    expect(run.usage.degraded).toBe(true);
+    expect(run.output?.content).toContain("模型暂时不可用");
+  });
+
   it("fails closed on a malformed final model payload", async () => {
     const malformed: ModelGateway = { async complete() { return { content: "这不是 JSON 协议响应", provider: "malformed", model: "malformed", inputTokens: 1, outputTokens: 1, latencyMs: 1 }; } };
     const { orchestrator } = fixture(malformed);

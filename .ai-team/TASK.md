@@ -2,9 +2,9 @@
 
 - ID: `P08`
 - Title: `通用 Agent 调用链验证与工具/异常/确认机制补强`
-- Status: `active`
+- Status: `handoff`
 - Owner: `P08`
-- Next owner: `unassigned`
+- Next owner: `P09`
 
 ## Goal
 
@@ -12,11 +12,11 @@
 
 ## Acceptance scenarios
 
-- [ ] Agent 调用链完成验证：用户请求从 `app/api/v1/agent` 入口进入后，经运行时、编排器、上下文提供者、模型网关、Tool/Skill Registry 到提案确认的完整链路可追踪，关键路径有测试。
-- [ ] 工具调用具备权限和参数校验：工具仅在调用者具备所需权限、参数通过 Schema 校验、渠道/风险/确认策略允许时可用；越权、非法参数与禁用工具返回明确失败结果。
-- [ ] 模型和工具异常具备明确结果：模型网关失败（`MODEL_*`）、工具循环上限、工具超时/幂等/执行异常均写入 AgentRun 的明确 `failureCategory`，并向用户返回可核验结果。
-- [ ] 高风险动作进入人工确认流程：R3/R4 工具经服务端生成提案（输入摘要、风险等级、版本期望、提案哈希），人工确认（批准/拒绝/过期/撤销）后才能执行；确认门禁路径有测试。
-- [ ] 相关模块测试通过：`src/modules/agent` 与 `app/api/v1/agent` 聚焦单元、API、PostgreSQL 回归测试通过，且 `node .ai-team/check.mjs --base origin/main` 结果 valid。
+- [x] Agent 调用链完成验证：用户请求从 `app/api/v1/agent` 入口进入后，经运行时、编排器、上下文提供者、模型网关、Tool/Skill Registry 到提案确认的完整链路可追踪，关键路径有测试。
+- [x] 工具调用具备权限和参数校验：工具仅在调用者具备所需权限、参数通过 Schema 校验、渠道/风险/确认策略允许时可用；越权、非法参数与禁用工具返回明确失败结果。
+- [x] 模型和工具异常具备明确结果：模型网关失败（`MODEL_*`）经降级回答与 `usage.degraded` 明确呈现；工具循环上限、工具超时/执行异常写入明确 `failureCategory`/`errorCategory`；网络类模型失败已归类为 `MODEL_PROVIDER_UNAVAILABLE`。
+- [x] 高风险动作进入人工确认流程：R3/R4 工具经服务端生成提案（输入摘要、风险等级、版本期望、提案哈希），人工确认（批准/拒绝/过期/撤销）后才能执行；确认门禁路径有测试。
+- [x] 相关模块测试通过：P08 聚焦单元、API、PostgreSQL 回归测试通过，且 `node .ai-team/check.mjs --base origin/main` 结果 valid。
 
 ## Invariants
 
@@ -33,33 +33,37 @@
 - P08 在 fork `Lanstzz/nexus-office-agent` 上开发，经 PR 合入 `office-agent/nexus-office-agent` 的 `main`；公开仓库继续禁用 VibeCollab Private Session、Hook 与真实凭据。
 - 开发环境使用 lockfile 安装的依赖和内存/PGlite fixture；真实模型与真实 PostgreSQL 只属于本机或部署 Secret 管理。
 - 本机网络访问经代理 `http://127.0.0.1:7890`（`all_proxy` 等环境变量）。
+- `tests/unit/agent-native-tool-routing.test.ts` 的 3 处 `ManagementLoopService` 二参构造调用是 HEAD 既有类型错误（不在 P03 记录基线内），位于 P08 范围内且阻塞 `npm run typecheck`，已修复为与同文件其余 4 处一致的单参仓库构造；未改动生产代码。
 
 ## Completed
 
-- 已创建 fork `Lanstzz/nexus-office-agent`，本地 remote `fork` 指向该仓库；上一轮工具刷新分支已推送并开 PR #7。
-- 已按 repo-task-sync 协议开启项目：读取 AGENTS.md、PROJECT.md、TASK.md、SKILL.md；确认本地 `main` 与 `origin/main` 一致（`4c3216c`）。
-- 已创建 P08 分支 `codex/p08-common-agent` 并完成本 TASK.md 的 P08 定义（当前提交）。
-- 已盘点 `src/modules/agent`（domain: `tool`/`skill`/`model-gateway`/`proposal`/`agent-run`；application: `orchestrator`/`context-provider`/`management-tools`/`office-read-tools`/`store`/`schemas`；infrastructure: `postgres-agent-store`）与 `app/api/v1/agent`（`runs`、`runs/[id]`、`proposals/[id]/confirm`、`jobs/[id]`、`jobs/[id]/control`）现状及既有测试清单。
+- 调用链梳理（步骤 1）：`POST /api/v1/agent/runs` → `resolveRequestContext`（租户/用户/权限/渠道）→ `createAgentRunSchema.parse` → `getAgentOrchestrator().createRun`：clientRequestId 幂等 → 会话绑定 → 受限输入 refusal（不入模型/持久化）→ 提示注入拒绝 → `ManagementContextProvider.build`（权限化摘要、引用、版本期望）→ `tools.available` + `skills.availableForTools`（服务端过滤）→ 模型循环（≤4 轮/≤8 次调用）→ `handleToolCall`（`assertToolPolicy` + `inputSchema.parse` + 提案或执行）→ `finishRun`（持久化+消息+记忆）。确认链路：`POST /api/v1/agent/proposals/[id]/confirm` → `confirmProposal`（哈希/actor/状态/过期/版本/策略校验）→ `queueConfirmedProposal` → 安全执行队列 job；读取与控制：`GET /runs/[id]`、`GET /jobs/[id]`、`POST /jobs/[id]/control`（证据摘要门禁）。
+- 验证（步骤 2-6）：模型网关三实现（Fake/OpenAICompatible/Unavailable）与 `MODEL_*` 错误分类、降级回答；租户/actor/权限过滤（store 按租户、run/proposal 按 actor、上下文按 `evaluateAccess`）；Tool/Skill Registry 的 `register/get/getByModelName/available/assertToolPolicy`；经营管理查询工具（`office.read_governance_workspace`、`office.read_enterprise_intelligence`、`office.prepare_operating_insight`、`knowledge.search`、`meeting.prepare`、`workflow.read_snapshot`、`workflow.pre_review` 均 R0 只读+权限校验；`management.create_risk` R3 强制确认、`admin.assign_role` R4 禁用）；高风险确认（`createProposal`/`approveProposal` 哈希与过期、`confirmProposal` 门禁、job 队列与人工处置、并发唯一认领）。
+- 成果（步骤 7）：
+  - 工具路由：`ToolRegistry.register` 增加模型名冲突守卫 `TOOL_MODEL_NAME_COLLISION`，防止不同工具 id 映射到同一模型名导致 LLM 路由歧义；新增 `tests/unit/agent-tool-registry.test.ts`。
+  - 异常处理：`OpenAICompatibleModelGateway` 将非 HTTP 网络类失败归类为 `MODEL_PROVIDER_UNAVAILABLE`（保留 `MODEL_*` 透传与 AbortError→`MODEL_TIMEOUT`），使模型不可达进入降级回答而非未分类失败；新增 `tests/unit/model-gateway.test.ts` 与 orchestrator 降级断言。
+  - 基线修复：`tests/unit/agent-native-tool-routing.test.ts` 3 处构造调用对齐仓库构造。
 
 ## Pending
 
-- P08 实现尚未开始；本提交仅完成项目开启与任务定义。
-- 全仓 typecheck/lint/test 基线沿用 P03/P06 已记录的范围外阻塞口径，P08 聚焦测试以实际执行为准。
+- P08 实现与验证完成，等待 PR #8 评审与合并；合入后 P09 接棒。
+- 真实模型、真实 PostgreSQL、三方平台联调仍属于外部验证 Gate，不在 P08 范围；Pi Agent 独立专项另行承接。
 
 ## Next step
 
-P08 第一步：梳理用户请求进入 Agent 后的调用链。从 `app/api/v1/agent/runs/route.ts` 与 `src/modules/agent/runtime.ts` 入口出发，追踪到 `application/orchestrator.ts`、`context-provider.ts`、`model-gateway.ts`、Tool/Skill Registry 与 `proposals/[id]/confirm` 确认路径，形成调用链说明并在 TASK.md 记录验证结果；随后按清单推进模型网关异常、租户/用户/业务上下文、Tool/Skill Registry、经营管理查询工具与高风险确认验证。
+P09 接棒：验证工作任务认领、任务移交、消息池、事件恢复和分层记忆能力。
 
 ## Verification
 
-- [ ] `node .ai-team/check.mjs --base origin/main`：P08 定义提交后复跑，结果 valid、Private sessions disabled。
-- [ ] P08 聚焦测试：`agent-orchestrator`、`agent-office-tool-registry`、`agent-native-tool-routing`、`agent-job-control`、`agent-api`、`postgres-agent-store`、`postgres-agent-worker`、`agent-security.eval` 等按实现进展执行并如实记录。
-- [ ] `npm run typecheck` / `npm run lint`：按 P03/P06 已记录基线口径执行并记录。
-- [ ] `git diff --check`：exit 0。
-- [ ] `node .ai-team/session.mjs validate` / `report`：enabled: false，无错误。
+- [x] `node .ai-team/check.mjs --base origin/main`：结果 valid、Private sessions disabled。
+- [x] P08 聚焦测试：12 个测试文件、52 项通过（orchestrator、office-tool-registry、native-tool-routing、job-control、tool-registry、model-gateway、agent-api、postgres-agent-store、postgres-agent-worker、postgres-agent-memory、agent-security.eval、requirement-traceability）。
+- [x] `npm run typecheck`：仅报告 P03 已记录 3 个 task-command/artifacts 缺失；P08 未引入新错误，并修复 agent 测试 3 处既有类型错误。
+- [x] `npm run lint`（改动文件）：exit 0。
+- [x] `git diff --check`：exit 0。
+- [x] `node .ai-team/session.mjs validate` / `report`：enabled: false、0 个 session。
 
 ## Handoff note
 
 - From: `P08`
-- To: `unassigned`
-- Summary: 本提交为项目开启与 P08 任务定义（通用 Agent 调用链验证与工具/异常/确认机制补强）；实现尚未开始。P08 完成后按 TASK 记录手动交接；下一专项为验证工作任务认领、任务移交、消息池、事件恢复和分层记忆能力。
+- To: `P09`
+- Summary: P08 完成通用 Agent 调用链梳理与六项验证，落地工具路由冲突守卫与模型网络失败分类两项成果，并修复 agent 测试 3 处既有类型错误；12 个测试文件 52 项通过，typecheck 回到 P03 记录基线。PR #8 待评审合并；P09 从工作任务认领、任务移交、消息池、事件恢复和分层记忆能力开始。

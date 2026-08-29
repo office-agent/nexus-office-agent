@@ -91,7 +91,7 @@ describe("LLM-native Skill and Tool routing", () => {
 
   it("routes an incomplete create request to an editable task template without formal dispatch", async () => {
     const context = createDevelopmentRequestContext("native-template-route");
-    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(), new InMemoryEventStore());
+    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(new InMemoryEventStore()));
     const tasks = new TaskCommandService(new InMemoryTaskCommandRepository());
     const conversation = (await tasks.workspace(context)).conversation;
     const tools = new ToolRegistry();
@@ -167,7 +167,7 @@ describe("LLM-native Skill and Tool routing", () => {
 
   it("binds an omitted conversation id to the primary conversation and captures casual content", async () => {
     const context = createDevelopmentRequestContext("native-casual-memory-route");
-    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(), new InMemoryEventStore());
+    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(new InMemoryEventStore()));
     const tasks = new TaskCommandService(new InMemoryTaskCommandRepository());
     const memory = new AgentMemoryService(new InMemoryAgentMemoryRepository());
     const conversation = (await tasks.workspace(context)).conversation;
@@ -193,7 +193,7 @@ describe("LLM-native Skill and Tool routing", () => {
 
   it("keeps the ReAct observation loop intact across a read tool and a final answer", async () => {
     const context = createDevelopmentRequestContext("native-react-loop");
-    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(), new InMemoryEventStore());
+    const management = new ManagementLoopService(new InMemoryManagementLoopRepository(new InMemoryEventStore()));
     const tasks = new TaskCommandService(new InMemoryTaskCommandRepository());
     const conversation = (await tasks.workspace(context)).conversation;
     const task = (await tasks.publishMission(context, {
