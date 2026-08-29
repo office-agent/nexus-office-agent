@@ -7,6 +7,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  realpathSync,
   readSync,
   readdirSync,
   statSync,
@@ -598,7 +599,7 @@ async function readStdin() {
   return content;
 }
 
-const invokedPath = process.argv[1] ? resolve(process.argv[1]) : null;
+const invokedPath = process.argv[1] ? realpathSync(process.argv[1]) : null;
 if (invokedPath === fileURLToPath(import.meta.url)) {
   try {
     const options = parseCli(process.argv.slice(2));
