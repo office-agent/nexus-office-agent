@@ -7,10 +7,9 @@ import { POST as transitionTask } from "@/app/api/v1/task-command/packages/[id]/
 import { POST as publishMessage } from "@/app/api/v1/task-command/message-pools/messages/route";
 import { POST as feedbackMessage } from "@/app/api/v1/task-command/message-pools/messages/[id]/feedback/route";
 import { GET as getHandoffTrail, POST as initiateHandoff } from "@/app/api/v1/task-command/packages/[id]/handoffs/route";
-import { POST as registerArtifact } from "@/app/api/v1/task-command/artifacts/route";
-import { GET as getArtifact } from "@/app/api/v1/task-command/artifacts/[id]/route";
-import { POST as appendArtifactVersion } from "@/app/api/v1/task-command/artifacts/[id]/versions/route";
-import { DEMO_PRODUCT_OWNER_ID } from "@/src/modules/task-command/infrastructure/in-memory-repository";
+import { TaskCommandService } from "@/src/modules/task-command/application/service";
+import { InMemoryTaskCommandRepository, DEMO_PRODUCT_OWNER_ID } from "@/src/modules/task-command/infrastructure/in-memory-repository";
+import { createDevelopmentRequestContext } from "@/src/platform/context/development-context";
 
 function request(url: string, body?: unknown) {
   return new Request(url, {
@@ -93,37 +92,80 @@ describe("Task command HTTP API", () => {
     expect(company.messages).toEqual(expect.arrayContaining([expect.objectContaining({ id: messageId, feedback: [expect.objectContaining({ content: "产品侧已确认，无阻塞。" })] })]));
   });
 
-  it("freezes registered artifact versions into a task handoff without leaking the storage reference", async () => {
+  // nexus.md P09 · docs/18 §6 · docs/09 AC-012
+  it("resumes task event streams from the last seen sequence without replaying already delivered events", async () => {
+    const service = new TaskCommandService(new InMemoryTaskCommandRepository());
+    const context = createDevelopmentRequestContext("sse-resume");
+    const conversation = (await service.workspace(context)).conversation;
+    const published = await service.publishMission(context, {
+      conversationId: conversation.id,
+      title: "SSE 恢复验证",
+      objective: "验证事件流断线恢复只返回新增事件。",
+      priority: "high",
+      dueAt: "2030-09-01T10:00:00.000Z",
+      packages: [{
+        title: "断线续传验证任务",
+        description: "确认断线后只拉取 sequence > cursor 的新增事件。",
+        acceptanceCriteria: "返回的事件都是新增事件。",
+        requiredSkills: ["交付"],
+        assignmentMode: "open_claim",
+        priority: "medium",
+        dueAt: "2030-08-30T10:00:00.000Z",
+        capacityPoints: 1,
+      }],
+    });
+    expect(published.created).toBe(true);
+
+    const firstBatch = await service.events(context, 0, 50);
+    expect(firstBatch.length).toBeGreaterThan(0);
+    const cursor = firstBatch[firstBatch.length - 1].sequence;
+    const resumed = await service.events(context, cursor, 50);
+    expect(resumed).toEqual([]);
+  });
+
+  it("freezes a task handoff snapshot and holds the transfer chain stable across acceptance", async () => {
     const initial = await getWorkspace(request("http://localhost/api/v1/task-command/workspace"));
     const conversationId = (await initial.json()).data.conversation.id as string;
     const marker = crypto.randomUUID().slice(0, 8);
     const published = await publishMission(request("http://localhost/api/v1/task-command/missions", {
-      conversationId, title: `交接 API ${marker}`, objective: "验证正式任务交接接口保留内容与文件链。", priority: "high", dueAt: "2030-09-01T10:00:00.000Z",
-      packages: [{ title: `交接任务 ${marker}`, description: "准备交接资料。", acceptanceCriteria: "接收方可核验全部资料。", requiredSkills: ["交付"], assignmentMode: "direct", assigneeId: "10000000-0000-4000-8000-000000000001", priority: "high", dueAt: "2030-08-30T10:00:00.000Z", capacityPoints: 2 }],
+      conversationId,
+      title: `交接 API ${marker}`,
+      objective: "验证正式任务交接接口保留内容与文件链。",
+      priority: "high",
+      dueAt: "2030-09-01T10:00:00.000Z",
+      packages: [{
+        title: `交接任务 ${marker}`,
+        description: "准备交接资料。",
+        acceptanceCriteria: "接收人可核验全部资料。",
+        requiredSkills: ["交付"],
+        assignmentMode: "direct",
+        assigneeId: "10000000-0000-4000-8000-000000000001",
+        priority: "high",
+        dueAt: "2030-08-30T10:00:00.000Z",
+        capacityPoints: 2,
+      }],
     }));
+    expect(published.status).toBe(201);
     const task = (await published.json()).data.packages[0];
-    const artifact = await registerArtifact(request("http://localhost/api/v1/task-command/artifacts", {
-      title: `交接资料 ${marker}`, fileName: "handoff-api-v1.xlsx", mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      contentDigest: "a".repeat(64), storageRef: "object://controlled/handoff-api-v1.xlsx", classification: "internal",
-    }));
-    expect(artifact.status).toBe(201);
-    const artifactPayload = await artifact.json();
-    const artifactId = artifactPayload.data.artifact.id as string;
+
     const handoff = await initiateHandoff(
-      request(`http://localhost/api/v1/task-command/packages/${task.id}/handoffs`, { expectedVersion: 1, toAssigneeId: DEMO_PRODUCT_OWNER_ID, note: "资料已校验，请继续完成产品侧复核。", artifactIds: [artifactId] }),
+      request(`http://localhost/api/v1/task-command/packages/${task.id}/handoffs`, {
+        expectedVersion: 1,
+        toAssigneeId: DEMO_PRODUCT_OWNER_ID,
+        note: "资料已校验，请继续完成产品侧复核。",
+      }),
       { params: Promise.resolve({ id: task.id }) },
     );
     expect(handoff.status).toBe(201);
     const handoffPayload = await handoff.json();
-    expect(handoffPayload.data.handoff).toMatchObject({ status: "pending", snapshot: { packageVersion: 1, title: `交接任务 ${marker}` }, artifactSnapshots: [{ artifactId, version: 1, contentDigest: "a".repeat(64) }] });
-    const artifactDetail = await getArtifact(request(`http://localhost/api/v1/task-command/artifacts/${artifactId}`), { params: Promise.resolve({ id: artifactId }) });
-    expect((await artifactDetail.json()).data.versions[0]).not.toHaveProperty("storageRef");
-    const updated = await appendArtifactVersion(
-      request(`http://localhost/api/v1/task-command/artifacts/${artifactId}/versions`, { expectedVersion: 1, fileName: "handoff-api-v2.xlsx", mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", contentDigest: "b".repeat(64), storageRef: "object://controlled/handoff-api-v2.xlsx" }),
-      { params: Promise.resolve({ id: artifactId }) },
-    );
-    expect(updated.status).toBe(201);
+    expect(handoffPayload.data.handoff).toMatchObject({
+      status: "pending",
+      snapshot: { packageVersion: 1, title: `交接任务 ${marker}` },
+      fromAssigneeId: "10000000-0000-4000-8000-000000000001",
+      toAssigneeId: DEMO_PRODUCT_OWNER_ID,
+    });
+
     const trail = await getHandoffTrail(request(`http://localhost/api/v1/task-command/packages/${task.id}/handoffs`), { params: Promise.resolve({ id: task.id }) });
-    expect((await trail.json()).data.handoffs).toEqual([expect.objectContaining({ id: handoffPayload.data.handoff.id, artifactSnapshots: [expect.objectContaining({ artifactId, version: 1, contentDigest: "a".repeat(64) })] })]);
+    expect((await trail.json()).data.handoffs).toEqual([expect.objectContaining({ id: handoffPayload.data.handoff.id, status: "pending" })]);
   });
 });

@@ -96,6 +96,30 @@ describe("tiered Agent memory", () => {
     await expect(service.expire(context, entry.id, entry.version)).rejects.toThrow("MEMORY_VERSION_CONFLICT");
   });
 
+  // nexus.md P09 · docs/22 §5 · docs/09 AC-003
+  it("keeps shared memory isolated by tenant even when both tenants query the same summary", async () => {
+    const service = new AgentMemoryService(new InMemoryAgentMemoryRepository());
+    const tenantA = { ...createDevelopmentRequestContext("memory-tenant-a"), tenantId: "tenant-a-memory", actorId: "actor-a-memory", permissions: ["memory:read", "memory:write", "memory:share", "memory:read_shared"] };
+    const tenantB = { ...createDevelopmentRequestContext("memory-tenant-b"), tenantId: "tenant-b-memory", actorId: "actor-b-memory", permissions: ["memory:read", "memory:write", "memory:share", "memory:read_shared"] };
+
+    const aEntry = await service.remember(tenantA, {
+      summary: "季度复盘结论：上线后需继续完善客户回访闭环。", scopeType: "tenant", scopeId: tenantA.tenantId, visibility: "shared",
+      classification: "internal", importance: 85, confidence: 100, sourceRefs: ["policy:post_release_review"],
+    });
+    const bEntry = await service.remember(tenantB, {
+      summary: "季度复盘结论：上线后需继续完善客户回访闭环。", scopeType: "tenant", scopeId: tenantB.tenantId, visibility: "shared",
+      classification: "internal", importance: 85, confidence: 100, sourceRefs: ["policy:post_release_review"],
+    });
+
+    const aVisible = await service.recall(tenantA, { query: "季度复盘结论", includeShared: true, limit: 10 });
+    const bVisible = await service.recall(tenantB, { query: "季度复盘结论", includeShared: true, limit: 10 });
+
+    expect(aVisible.map(({ id }) => id)).toContain(aEntry.id);
+    expect(aVisible.map(({ id }) => id)).not.toContain(bEntry.id);
+    expect(bVisible.map(({ id }) => id)).toContain(bEntry.id);
+    expect(bVisible.map(({ id }) => id)).not.toContain(aEntry.id);
+  });
+
   it("never rehydrates restricted memories into the model context or persists restricted automatic snapshots", async () => {
     const service = new AgentMemoryService(new InMemoryAgentMemoryRepository());
     const context = createDevelopmentRequestContext("restricted-memory");
