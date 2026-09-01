@@ -113,7 +113,8 @@ export class OpenAICompatibleModelGateway implements ModelGateway {
       };
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") throw new Error("MODEL_TIMEOUT");
-      throw error;
+      if (error instanceof Error && error.message.startsWith("MODEL_")) throw error;
+      throw new Error("MODEL_PROVIDER_UNAVAILABLE");
     } finally {
       clearTimeout(timeout);
     }

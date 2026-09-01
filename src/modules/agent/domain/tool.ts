@@ -24,6 +24,10 @@ export class ToolRegistry {
 
   register(tool: AgentTool): void {
     if (this.tools.has(tool.id)) throw new Error(`TOOL_ALREADY_REGISTERED:${tool.id}`);
+    const modelName = modelToolName(tool.id);
+    for (const existing of this.tools.values()) {
+      if (modelToolName(existing.id) === modelName) throw new Error(`TOOL_MODEL_NAME_COLLISION:${tool.id}`);
+    }
     this.tools.set(tool.id, tool);
   }
 
