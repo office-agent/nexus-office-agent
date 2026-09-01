@@ -48,10 +48,11 @@
 - P07 PR #6 与 P08 PR #8 已依次合并；P09 分支已同步最新 `main`，保留 P07/P08 产品代码和 P09 handoff 状态。
 - 已恢复 Artifact 版本冻结、脱敏读取和后续版本追加测试，并新增注册、读取和追加版本三个 Route Handler；全仓 typecheck 因此从 3 个缺失模块恢复为通过。
 - 已将根目录运行产物忽略规则锚定为 `/artifacts/`，确认三个 Route 文件可被 Git 跟踪，重新克隆后不会再次缺失。
+- P09 集成修复已通过提交 `649e387` 推送到团队分支，并创建 PR #9。
 
 ## Pending
 
-- P09 已达到可合并检查点，待提交、推送并创建 PR；合并后由 P10 从最新 `main` 正式接棒。
+- PR #9 等待最新 GitHub 检查、复核与合并；合并后由 P10 从最新 `main` 正式接棒。
 
 ## Next step
 
@@ -66,6 +67,7 @@ P09 PR 检查通过并合并后，P10 拉取最新 `main`，创建 P10 分支，
 - [x] 集成修复后聚焦回归：`agent-memory`、`task-command-api`、`task-command`、`postgres-task-command` 共 4 个测试文件、20 项通过。
 - [x] 集成修复后 `npm run typecheck`：exit 0；此前 3 个 Task Command Artifact Route 缺失已消除。
 - [x] 集成修复改动文件 ESLint：exit 0。
+- [x] PR #9 已创建，代码、测试和 TASK 位于同一 PR。
 
 ## Handoff note
 
