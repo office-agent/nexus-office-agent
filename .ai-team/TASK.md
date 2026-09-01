@@ -42,13 +42,14 @@
 - P09 集成修复保留 SSE 与跨租户记忆测试，恢复 Artifact 版本交接覆盖，补齐三个 Artifact Route，并将 `.gitignore` 根目录规则锚定为 `/artifacts/`。
 - 接棒前 `npm run typecheck` 已恢复为 exit 0，工作区 clean，公开仓库 Private sessions 保持 disabled。
 - 已从最新 `main` 创建 P10 分支并将任务切换为 `P10 / active`。
+- P10 接棒提交 `b30ce5f` 已推送到团队分支，并创建 Draft PR #10；PR 在最终验收完成前保持 Draft。
 
 ## Pending
 
 - 执行干净依赖安装、全仓 typecheck、Lint、生产构建和全量测试，保存真实汇总。
 - 执行 P01-P09 跨模块关键回归和安全不变量检查，定位可稳定复现的主项目集成缺口。
 - 对范围内缺口实施最小修复并补充回归；Pi Agent 专项或真实外部 Gate 仅记录，不扩大范围。
-- 更新最终交付证据、切换为 handoff、推送 P10 分支并创建 PR，等待 P01 复核。
+- 更新最终交付证据、将 Draft PR #10 转为 ready、切换为 handoff，等待 P01 复核。
 
 ## Next step
 
@@ -61,6 +62,7 @@
 - [x] P09 合并后 `npm run typecheck`：exit 0。
 - [x] P10 接棒前本地 `main` 与 `origin/main` 均位于 `265e446`，工作区 clean。
 - [x] P10 active 状态 `node .ai-team/check.mjs --base origin/main`：exit 0，0/6，`Result: valid`，Private sessions disabled。
+- [x] P10 Draft PR #10 已创建，当前保持 `active`，未把接棒状态误报为最终完成。
 - [ ] P10 全仓工程门禁与跨模块聚焦回归。
 
 ## Handoff note
