@@ -9,7 +9,7 @@ node_modules/
 .next-build*/
 .runner-build/
 .tmp/
-artifacts/
+/artifacts/
 tsconfig.tsbuildinfo
 .codex-*
 out/
