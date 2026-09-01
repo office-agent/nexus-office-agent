@@ -78,6 +78,9 @@ RBAC 角色能力
 - 飞书 HTTP 模式使用 Encrypt Key/Verification Token。
 - 钉钉优先 Stream SDK；HTTP 模式按官方协议验签解密。
 - 企业微信校验 msg_signature、AES 解密并验证 receiveid。
+- HTTP 回调只在协议校验通过后写入租户隔离的持久 replay claim；合法 duplicate 返回平台成功 ACK，但不重复进入业务 Inbox。
+- Callback replay fingerprint 只绑定平台、连接、时间戳、nonce、签名和正文摘要；不保存原始或解密后的消息内容。
+- URL 中的 tenant 仅为兼容路由提示，可信 tenant、provider 与 secret_ref 必须来自精确匹配的服务端连接记录。
 - 原始回调限制大小、解析深度和内容类型。
 - 每连接器独立限流、熔断和权限范围。
 - Token 刷新采用单飞锁，日志仅记录 secret_ref 和状态。

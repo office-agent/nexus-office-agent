@@ -148,7 +148,7 @@ type DomainEvent<T> = {
 /api/integrations/wecom/events
 ```
 
-公开路由只做协议验证、大小限制、完整统一事件信封的幂等持久化和 ACK，不执行模型推理或复杂业务。平台长连接事件调用同一内部 ingestion service。数据库持久化失败时不得返回成功 ACK。
+公开路由只做连接绑定、协议验证、大小限制、HTTP replay claim、完整统一事件信封的 Inbox 幂等持久化和 ACK，不执行模型推理或复杂业务。平台长连接事件复用标准化与 Inbox 层，不使用 HTTP replay claim。Replay claim 记录首次接收时间；若后续 Inbox 持久化失败，平台重试必须使用该时间重新生成稳定事件 ID 并重试 Inbox。数据库首次持久化失败时不得返回成功 ACK；只有 Inbox 已存在的合法 duplicate 才返回平台成功 ACK，同时报告 duplicate 且不得重复入队。
 
 ## 8. Deep Link
 
