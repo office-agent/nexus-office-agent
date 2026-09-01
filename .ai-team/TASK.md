@@ -37,6 +37,7 @@
 
 ## Completed
 
+- P07 已由 PR #6 合并为主分支提交 `fbd4325`；P08 分支已合入最新 `main`，仅 `.ai-team/TASK.md` 发生交接状态冲突，并按当前 P08 handoff 内容解决，P07 产品代码与测试完整保留。
 - 调用链梳理（步骤 1）：`POST /api/v1/agent/runs` → `resolveRequestContext`（租户/用户/权限/渠道）→ `createAgentRunSchema.parse` → `getAgentOrchestrator().createRun`：clientRequestId 幂等 → 会话绑定 → 受限输入 refusal（不入模型/持久化）→ 提示注入拒绝 → `ManagementContextProvider.build`（权限化摘要、引用、版本期望）→ `tools.available` + `skills.availableForTools`（服务端过滤）→ 模型循环（≤4 轮/≤8 次调用）→ `handleToolCall`（`assertToolPolicy` + `inputSchema.parse` + 提案或执行）→ `finishRun`（持久化+消息+记忆）。确认链路：`POST /api/v1/agent/proposals/[id]/confirm` → `confirmProposal`（哈希/actor/状态/过期/版本/策略校验）→ `queueConfirmedProposal` → 安全执行队列 job；读取与控制：`GET /runs/[id]`、`GET /jobs/[id]`、`POST /jobs/[id]/control`（证据摘要门禁）。
 - 验证（步骤 2-6）：模型网关三实现（Fake/OpenAICompatible/Unavailable）与 `MODEL_*` 错误分类、降级回答；租户/actor/权限过滤（store 按租户、run/proposal 按 actor、上下文按 `evaluateAccess`）；Tool/Skill Registry 的 `register/get/getByModelName/available/assertToolPolicy`；经营管理查询工具（`office.read_governance_workspace`、`office.read_enterprise_intelligence`、`office.prepare_operating_insight`、`knowledge.search`、`meeting.prepare`、`workflow.read_snapshot`、`workflow.pre_review` 均 R0 只读+权限校验；`management.create_risk` R3 强制确认、`admin.assign_role` R4 禁用）；高风险确认（`createProposal`/`approveProposal` 哈希与过期、`confirmProposal` 门禁、job 队列与人工处置、并发唯一认领）。
 - 成果（步骤 7）：
@@ -61,6 +62,7 @@ P09 接棒：验证工作任务认领、任务移交、消息池、事件恢复�
 - [x] `npm run lint`（改动文件）：exit 0。
 - [x] `git diff --check`：exit 0。
 - [x] `node .ai-team/session.mjs validate` / `report`：enabled: false、0 个 session。
+- [x] 合入 P07 最新主分支后的独立复核：P08 聚焦 12 个测试文件、52 项通过；改动文件 ESLint 通过；`npm run typecheck` 仅保留 3 个已记录的 Task Command Artifact Route 缺失。
 
 ## Handoff note
 
