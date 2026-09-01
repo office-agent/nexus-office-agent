@@ -3,11 +3,12 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { DingtalkHttpWebhookVerifier, FeishuWebhookVerifier, WecomWebhookVerifier } from "@/src/modules/integration/application/webhook-verifier";
 import { normalizeDingtalkEvent, normalizeFeishuEvent, normalizeWecomEvent } from "@/src/modules/integration/application/event-normalizers";
-import { ConnectorSecurityError, encryptEnterpriseCallbackFixture, sha1SortedSignature } from "@/src/modules/integration/security/callback-crypto";
+import { ConnectorSecurityError, decryptEnterpriseCallback, encryptEnterpriseCallbackFixture, sha1SortedSignature } from "@/src/modules/integration/security/callback-crypto";
 import { buildEncryptedXml } from "@/src/modules/integration/security/safe-xml";
 import { InMemoryEventStore } from "@/src/modules/events/application/event-store";
 import { WebhookIngressService } from "@/src/modules/integration/application/webhook-ingress";
 import type { ConnectorSecretResolver } from "@/src/modules/integration/infrastructure/secret-resolver";
+import { InMemoryWebhookReplayStore } from "@/src/modules/integration/infrastructure/webhook-replay-store";
 
 const NOW = Date.parse("2026-08-05T00:00:00.000Z");
 const timestamp = String(NOW / 1000);
@@ -78,9 +79,90 @@ describe("connector callback security", () => {
       { async getForWebhook() { return { id: "connection-f", tenantId: "tenant-a", provider: "feishu", status: "active", secretRef: "fixture-ref", transportMode: "http" }; } },
       { async resolve() { return { verificationToken: token, encryptKey }; } } satisfies ConnectorSecretResolver,
       new InMemoryEventStore(),
+      new InMemoryWebhookReplayStore(),
     );
     const result = await service.receive({ tenantId: "tenant-a", connectionId: "connection-f", provider: "feishu", headers: { "x-lark-request-timestamp": ingressTimestamp, "x-lark-request-nonce": nonce, "x-lark-signature": signature }, query: {}, rawBody: body, receivedAt: new Date(NOW).toISOString(), traceId: "trace-challenge" });
     expect(result.challenge).toEqual({ provider: "feishu", value: "challenge-value" });
+  });
+
+  it("acknowledges an independently received callback replay without claiming a second inbox event", async () => {
+    const token = "replay-token";
+    const encryptKey = "replay-key";
+    const body = JSON.stringify({
+      schema: "2.0",
+      header: { event_type: "im.message.receive_v1", token },
+      event: { sender: { sender_id: { open_id: "ou-replay" } }, message: { message_id: "m-replay", chat_id: "c-replay" } },
+    });
+    const nonce = "nonce-replay";
+    const ingressTimestamp = String(Math.floor(Date.now() / 1000));
+    const signature = createHash("sha256").update(`${ingressTimestamp}${nonce}${encryptKey}${body}`).digest("hex");
+    const connection = { async getForWebhook() { return { id: "connection-f", tenantId: "tenant-a", provider: "feishu" as const, status: "active" as const, secretRef: "fixture-ref", transportMode: "http" as const }; } };
+    const secrets = { async resolve() { return { verificationToken: token, encryptKey }; } } satisfies ConnectorSecretResolver;
+    const events = new InMemoryEventStore();
+    const replays = new InMemoryWebhookReplayStore();
+    const firstIngress = new WebhookIngressService(connection, secrets, events, replays);
+    const secondIngress = new WebhookIngressService(connection, secrets, events, replays);
+    const request = {
+      tenantId: "tenant-a",
+      connectionId: "connection-f",
+      provider: "feishu" as const,
+      headers: { "x-lark-request-timestamp": ingressTimestamp, "x-lark-request-nonce": nonce, "x-lark-signature": signature },
+      query: {},
+      rawBody: body,
+      traceId: "trace-replay",
+    };
+
+    await expect(firstIngress.receive({ ...request, receivedAt: new Date(NOW).toISOString() })).resolves.toMatchObject({ accepted: 1, duplicates: 0 });
+    await expect(secondIngress.receive({ ...request, receivedAt: new Date(NOW + 1_000).toISOString() })).resolves.toMatchObject({ accepted: 0, duplicates: 1 });
+    expect(events.inbound.size).toBe(1);
+  });
+
+  it("retries inbox persistence when the replay claim survived an earlier inbox failure", async () => {
+    const token = "recovery-token";
+    const encryptKey = "recovery-key";
+    const body = JSON.stringify({
+      schema: "2.0",
+      header: { event_type: "im.message.receive_v1", token },
+      event: { sender: { sender_id: { open_id: "ou-recovery" } }, message: { message_id: "m-recovery", chat_id: "c-recovery" } },
+    });
+    const nonce = "nonce-recovery";
+    const ingressTimestamp = String(Math.floor(Date.now() / 1000));
+    const signature = createHash("sha256").update(`${ingressTimestamp}${nonce}${encryptKey}${body}`).digest("hex");
+    const connection = { async getForWebhook() { return { id: "connection-f", tenantId: "tenant-a", provider: "feishu" as const, status: "active" as const, secretRef: "fixture-ref", transportMode: "http" as const }; } };
+    const secrets = { async resolve() { return { verificationToken: token, encryptKey }; } } satisfies ConnectorSecretResolver;
+    const events = new InMemoryEventStore();
+    const persist = events.claimInbound.bind(events);
+    let claims = 0;
+    events.claimInbound = async (event) => {
+      claims += 1;
+      if (claims === 1) throw new Error("INBOX_UNAVAILABLE");
+      return persist(event);
+    };
+    const replays = new InMemoryWebhookReplayStore();
+    const request = { tenantId: "tenant-a", connectionId: "connection-f", provider: "feishu" as const, headers: { "x-lark-request-timestamp": ingressTimestamp, "x-lark-request-nonce": nonce, "x-lark-signature": signature }, query: {}, rawBody: body, traceId: "trace-recovery" };
+
+    await expect(new WebhookIngressService(connection, secrets, events, replays).receive({ ...request, receivedAt: new Date(NOW).toISOString() })).rejects.toThrow("INBOX_UNAVAILABLE");
+    await expect(new WebhookIngressService(connection, secrets, events, replays).receive({ ...request, receivedAt: new Date(NOW + 1_000).toISOString() })).resolves.toMatchObject({ accepted: 1, duplicates: 0 });
+    expect(events.inbound.size).toBe(1);
+  });
+
+  it("does not let an invalid verification token consume the replay claim", async () => {
+    const token = "valid-token";
+    const encryptKey = "token-order-key";
+    const body = JSON.stringify({ schema: "2.0", header: { event_id: "evt-token-order", event_type: "im.message.receive_v1", token }, event: {} });
+    const nonce = "nonce-token-order";
+    const ingressTimestamp = String(Math.floor(Date.now() / 1000));
+    const signature = createHash("sha256").update(`${ingressTimestamp}${nonce}${encryptKey}${body}`).digest("hex");
+    const connection = { async getForWebhook() { return { id: "connection-f", tenantId: "tenant-a", provider: "feishu" as const, status: "active" as const, secretRef: "fixture-ref", transportMode: "http" as const }; } };
+    const events = new InMemoryEventStore();
+    const replays = new InMemoryWebhookReplayStore();
+    const request = { tenantId: "tenant-a", connectionId: "connection-f", provider: "feishu" as const, headers: { "x-lark-request-timestamp": ingressTimestamp, "x-lark-request-nonce": nonce, "x-lark-signature": signature }, query: {}, rawBody: body, receivedAt: new Date(NOW).toISOString(), traceId: "trace-token-order" };
+
+    const invalid = new WebhookIngressService(connection, { async resolve() { return { verificationToken: "wrong-token", encryptKey }; } }, events, replays);
+    await expect(invalid.receive(request)).rejects.toThrow("VERIFICATION_TOKEN_INVALID");
+
+    const valid = new WebhookIngressService(connection, { async resolve() { return { verificationToken: token, encryptKey }; } }, events, replays);
+    await expect(valid.receive(request)).resolves.toMatchObject({ accepted: 1, duplicates: 0 });
   });
 
   it("returns an encrypted DingTalk success acknowledgment after durable claim", async () => {
@@ -96,10 +178,55 @@ describe("connector callback security", () => {
       { async getForWebhook() { return { id: "connection-d", tenantId: "tenant-a", provider: "dingtalk", status: "active", secretRef: "fixture-ref", transportMode: "http" }; } },
       { async resolve() { return { token, encodingAesKey: aesKey, receiveId }; } },
       events,
+      new InMemoryWebhookReplayStore(),
     );
     const result = await service.receive({ tenantId: "tenant-a", connectionId: "connection-d", provider: "dingtalk", headers: {}, query: { timestamp: ingressTimestamp, nonce, signature }, rawBody: JSON.stringify({ encrypt }), receivedAt: new Date(NOW).toISOString(), traceId: "trace-d-ack" });
     expect(result.accepted).toBe(1);
     expect(result.acknowledgment?.contentType).toContain("application/json");
     expect(JSON.parse(result.acknowledgment!.body)).toEqual(expect.objectContaining({ msg_signature: expect.any(String), encrypt: expect.any(String) }));
+  });
+
+  it("returns a valid encrypted DingTalk acknowledgment for a duplicate callback", async () => {
+    const token = "ding-replay-token";
+    const receiveId = "ding-replay-org";
+    const plaintext = JSON.stringify({ eventType: "user.change", senderStaffId: "staff-replay" });
+    const encrypt = encryptEnterpriseCallbackFixture({ plaintext, encodingAesKey: aesKey, receiveId });
+    const nonce = "nonce-ding-replay";
+    const ingressTimestamp = String(Math.floor(Date.now() / 1000));
+    const signature = sha1SortedSignature([token, ingressTimestamp, nonce, encrypt]);
+    const connection = { async getForWebhook() { return { id: "connection-d", tenantId: "tenant-a", provider: "dingtalk" as const, status: "active" as const, secretRef: "fixture-ref", transportMode: "http" as const }; } };
+    const secrets = { async resolve() { return { token, encodingAesKey: aesKey, receiveId }; } } satisfies ConnectorSecretResolver;
+    const events = new InMemoryEventStore();
+    const replays = new InMemoryWebhookReplayStore();
+    const request = { tenantId: "tenant-a", connectionId: "connection-d", provider: "dingtalk" as const, headers: {}, query: { timestamp: ingressTimestamp, nonce, signature }, rawBody: JSON.stringify({ encrypt }), traceId: "trace-ding-replay" };
+
+    await new WebhookIngressService(connection, secrets, events, replays).receive({ ...request, receivedAt: new Date(NOW).toISOString() });
+    const duplicate = await new WebhookIngressService(connection, secrets, events, replays).receive({ ...request, receivedAt: new Date(NOW + 1_000).toISOString() });
+    const acknowledgment = JSON.parse(duplicate.acknowledgment!.body) as { encrypt: string };
+
+    expect(duplicate).toMatchObject({ accepted: 0, duplicates: 1 });
+    expect(decryptEnterpriseCallback({ ciphertext: acknowledgment.encrypt, encodingAesKey: aesKey, expectedReceiveId: receiveId })).toBe("success");
+    expect(events.inbound.size).toBe(1);
+  });
+
+  it("returns WeCom success for a duplicate callback without claiming a second inbox event", async () => {
+    const token = "wecom-replay-token";
+    const receiveId = "wecom-replay-corp";
+    const plaintext = "<xml><FromUserName><![CDATA[user-replay]]></FromUserName><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[hello]]></Content><AgentID>1000002</AgentID></xml>";
+    const encrypt = encryptEnterpriseCallbackFixture({ plaintext, encodingAesKey: aesKey, receiveId });
+    const nonce = "nonce-wecom-replay";
+    const ingressTimestamp = String(Math.floor(Date.now() / 1000));
+    const msgSignature = sha1SortedSignature([token, ingressTimestamp, nonce, encrypt]);
+    const connection = { async getForWebhook() { return { id: "connection-w", tenantId: "tenant-a", provider: "wecom" as const, status: "active" as const, secretRef: "fixture-ref", transportMode: "http" as const }; } };
+    const secrets = { async resolve() { return { token, encodingAesKey: aesKey, receiveId }; } } satisfies ConnectorSecretResolver;
+    const events = new InMemoryEventStore();
+    const replays = new InMemoryWebhookReplayStore();
+    const request = { tenantId: "tenant-a", connectionId: "connection-w", provider: "wecom" as const, headers: {}, query: { timestamp: ingressTimestamp, nonce, msg_signature: msgSignature }, rawBody: buildEncryptedXml(encrypt), traceId: "trace-wecom-replay" };
+
+    await new WebhookIngressService(connection, secrets, events, replays).receive({ ...request, receivedAt: new Date(NOW).toISOString() });
+    const duplicate = await new WebhookIngressService(connection, secrets, events, replays).receive({ ...request, receivedAt: new Date(NOW + 1_000).toISOString() });
+
+    expect(duplicate).toMatchObject({ accepted: 0, duplicates: 1, acknowledgment: { body: "success" } });
+    expect(events.inbound.size).toBe(1);
   });
 });

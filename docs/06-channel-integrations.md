@@ -151,7 +151,17 @@ HTTP 推送仅作私有化兼容：数据为密文，必须验签和解密；官
 - [网页授权链接](https://developer.work.weixin.qq.com/document/path/91120)
 - [访问频率限制](https://developer.work.weixin.qq.com/document/path/96212)
 
-## 7. 消息与卡片设计
+## 7. HTTP 回调防重放与业务幂等
+
+公开回调中的 `tenant_id` 仅用于兼容既有平台 URL 的路由提示，不是授权事实。服务端必须以 `tenant_id + connection_id + provider` 精确查询处于可接收状态的连接，且只能从该连接的 `secret_ref` 解析回调密钥；验签后的统一事件必须使用连接记录中的 tenant、connection 和 provider，绑定不一致时失败关闭。
+
+HTTP 回调按以下顺序处理：连接绑定与 transport 校验 → Secret 解析 → 时间窗/签名/Verification Token 或 receiveid/密文校验 → URL Challenge 快速响应或持久化 replay claim → 事件标准化 → Inbox 原子 claim → 平台 ACK。协议校验失败的请求不得写 replay 或 Inbox。
+
+`webhook_replay_claims` 只保存 tenant、connection、provider、服务端 SHA-256 fingerprint、原始正文摘要、首次接收时间和过期时间，不保存回调或解密正文。Fingerprint 绑定平台、连接、平台时间戳、nonce、签名和正文摘要；`INSERT ... ON CONFLICT DO NOTHING` 保证多实例并发下只有一个 replay claim。过期摘要按可信服务器接收时间清理。
+
+Callback replay 与 Inbox 幂等是两层不同保护：前者识别同一 HTTP 传输回调并稳定其首次接收时间，后者按统一业务事件 ID 拦截不同封装或不同 transport 的重复事件。Replay claim 写入后若 Inbox 首次持久化失败，平台重试仍使用首次接收时间重新尝试 Inbox，不能仅凭 replay duplicate 返回成功。只有 Inbox 已存在时才报告 duplicate；合法 duplicate 不属于认证失败，仍返回飞书、钉钉或企业微信要求的成功 ACK，且不得触发业务副作用。URL Challenge 完成协议验证后直接响应，不进入 replay 或业务 Inbox。
+
+## 8. 消息与卡片设计
 
 统一消息语义：
 
@@ -163,13 +173,13 @@ HTTP 推送仅作私有化兼容：数据为密文，必须验签和解密；官
 
 卡片必须包含稳定 action_id、proposal_hash、expires_at 和 deep_link。平台回调只携带最小引用，服务端重新加载最新业务状态并重新鉴权，禁止信任客户端回传的金额、角色或目标对象。
 
-## 8. 安装与租户绑定
+## 9. 安装与租户绑定
 
 安装流程：创建 Connection 草稿 → 管理员录入/授权凭据 → 能力探测 → 组织范围选择 → 初次同步 → 身份冲突处理 → 机器人测试 → 发布连接。
 
 连接状态：`draft → verifying → syncing → active → degraded → suspended → revoked`。
 
-## 9. 同步策略
+## 10. 同步策略
 
 - 组织和用户：首次全量 + 事件增量 + 每日对账。
 - 消息：只接收应用可见和用户主动交互的内容，不声称获取平台不允许的数据。
@@ -177,7 +187,7 @@ HTTP 推送仅作私有化兼容：数据为密文，必须验签和解密；官
 - 写回：优先平台 API；失败时保留内部事实与待重试状态。
 - 冲突：外部组织字段按来源优先级，内部管理对象不被外部同步覆盖。
 
-## 10. 企业接入验收控制面
+## 11. 企业接入验收控制面
 
 `0.11.0` 首次将“已配置环境变量”与“真实可用”分开；`0.12.0-durable-runtime` 进一步要求真实 Worker 心跳和持久化旅程证据。管理员在网页执行的预检会真实调用后端，并以 `passed` / `failed` / `blocked` 三态追加证据：
 
