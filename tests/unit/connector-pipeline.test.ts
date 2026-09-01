@@ -33,6 +33,18 @@ describe("connector inbound pipeline", () => {
     expect([...events.inbound.values()][0]).toMatchObject({ status: "failed", category: "EXTERNAL_IDENTITY_UNRESOLVED" });
   });
 
+  it.each(["candidate", "conflict"] as const)("fails closed when an external actor mapping is %s", async (status) => {
+    const control = new InMemoryConnectorControlPlane();
+    control.identities.set("feishu:connection-f:user:ou-1", { externalSubjectId: "ou-1", status });
+    const registry = new ConnectorRegistry();
+    registry.register(new FeishuConnector({ async request() { return { status: 200, body: {} }; } }, control));
+    const events = new InMemoryEventStore();
+    const pipeline = new InboundPipeline(registry, events, new InMemoryInboundQueue(), async () => { throw new Error("SHOULD_NOT_RUN"); });
+
+    expect(await pipeline.processVerified("feishu", rawMessage)).toEqual({ processed: 0, duplicates: 0, failures: 1 });
+    expect([...events.inbound.values()][0]).toMatchObject({ status: "failed", category: "EXTERNAL_IDENTITY_UNRESOLVED" });
+  });
+
   it("re-authenticates a channel confirmation against the mapped internal actor", async () => {
     const control = new InMemoryConnectorControlPlane();
     control.identities.set("feishu:connection-f:user:ou-1", { externalSubjectId: "ou-1", status: "verified", internalSubjectType: "user", internalSubjectId: "user-a" });

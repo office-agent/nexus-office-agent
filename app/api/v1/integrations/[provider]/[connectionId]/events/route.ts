@@ -4,6 +4,7 @@ import { PostgresEventStore } from "@/src/modules/events/infrastructure/postgres
 import { WebhookIngressService } from "@/src/modules/integration/application/webhook-ingress";
 import { PostgresConnectionRepository } from "@/src/modules/integration/infrastructure/connection-repository";
 import { createConnectorSecretResolver } from "@/src/modules/integration/infrastructure/secret-resolver";
+import { PostgresWebhookReplayStore } from "@/src/modules/integration/infrastructure/webhook-replay-store";
 import { ConnectorSecurityError } from "@/src/modules/integration/security/callback-crypto";
 import { createPostgresDatabase } from "@/src/platform/database/postgres";
 
@@ -29,7 +30,12 @@ async function handle(request: Request, context: { params: Promise<{ provider: s
   const rawBody = request.method === "GET" ? "" : await request.text();
   const database = createPostgresDatabase(databaseUrl);
   try {
-    const service = new WebhookIngressService(new PostgresConnectionRepository(database), createConnectorSecretResolver(), new PostgresEventStore(database));
+    const service = new WebhookIngressService(
+      new PostgresConnectionRepository(database),
+      createConnectorSecretResolver(),
+      new PostgresEventStore(database),
+      new PostgresWebhookReplayStore(database),
+    );
     const result = await service.receive({ tenantId, connectionId: parsed.data.connectionId, provider: parsed.data.provider, headers, query, rawBody, receivedAt: new Date().toISOString(), traceId: request.headers.get("x-request-id") ?? crypto.randomUUID() });
     if (result.challenge?.provider === "wecom") return new NextResponse(result.challenge.value, { status: 200, headers: { "content-type": "text/plain; charset=utf-8" } });
     if (result.challenge?.provider === "feishu") return NextResponse.json({ challenge: result.challenge.value }, { status: 200 });

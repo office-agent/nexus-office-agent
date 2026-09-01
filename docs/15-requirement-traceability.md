@@ -99,9 +99,9 @@
 | AR-011 | 自动验收 | `pwa-security.test.ts`、`client-platform-api.test.ts`：浏览器只调用 BFF，不保存 Secret |
 | AR-012 | 自动验收 | `client-platform.test.ts`、`pwa-security.test.ts`：PWA 复用 BFF/领域内核且离线边界受控 |
 | IR-001 | 自动验收 | `events-and-connectors.test.ts`、`platform-connectors.test.ts`、`integration-acceptance.test.ts`：统一连接器契约、能力矩阵与真实预检 |
-| IR-002 | 自动验收 | `connector-pipeline.test.ts`：先验证 ExternalIdentity，再加载业务上下文 |
-| IR-003 | 自动验收 | `connector-security.test.ts`：三平台验签/解密/时间窗后入队 |
-| IR-004 | 自动验收 | `connector-security.test.ts`、`postgres-durable-runtime.test.ts`：验签后完整信封持久化、Inbox 消费、租约回收与幂等重放 |
+| IR-002 | 自动验收 | `connector-pipeline.test.ts`、`postgres-connector-store.test.ts`、`postgres-agent-worker.test.ts`：连接绑定精确匹配，ExternalIdentity 仅接受 verified，并在渠道动作前加载当前业务权限上下文 |
+| IR-003 | 自动验收 | `connector-security.test.ts`：三平台验签/解密/时间窗后 claim，duplicate 返回安全 ACK 且不重复入队 |
+| IR-004 | 自动验收 | `connector-security.test.ts`、`postgres-connector-store.test.ts`、`postgres-durable-runtime.test.ts`：验签后持久 replay claim、完整信封 Inbox 持久化、并发重放、消费与租约回收 |
 | IR-005 | 自动验收 | `platform-connectors.test.ts`、`postgres-durable-runtime.test.ts`：首选渠道去重、生产 Outbox Dispatcher 与发布回执 |
 | IR-006 | 自动验收 | `platform-connectors.test.ts`、`agent-job-control.test.ts`、`postgres-agent-worker.test.ts`：限流、未知结果、有限重试和有证据人工核对 |
 | IR-007 | 自动验收 | `platform-connectors.test.ts`、`production-operations.test.ts`：数据库只存 secret_ref，运行时受管解析 |
